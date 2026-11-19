@@ -1,3 +1,7 @@
 export default function Loading() {
-  return <main className="loading">Đang tải Organic Work…</main>;
+  return (
+    <p className="query-loading" role="status">
+      Đang mở nội dung…
+    </p>
+  );
 }

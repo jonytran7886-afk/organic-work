@@ -1,8 +1,7 @@
-import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth";
-import Workspace from "@/components/workspace";
+import AdminRoute from "@/components/admin-route";
 export const runtime = "nodejs";
 export default async function Page({
   params,
@@ -28,11 +27,5 @@ export default async function Page({
     )
       redirect("/admin/users");
   }
-  return (
-    <Suspense
-      fallback={<main className="loading">Đang tải không gian làm việc…</main>}
-    >
-      <Workspace />
-    </Suspense>
-  );
+  return segments[0] === "admin" ? <AdminRoute /> : null;
 }

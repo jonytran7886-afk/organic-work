@@ -1,5 +1,4 @@
 "use client";
-import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -10,6 +9,8 @@ import {
   canStatus,
 } from "@/lib/model";
 import { waitingLabel, type WorkTask } from "@/lib/work-model";
+import { useWorkspace } from "./workspace-context";
+import { useQueryResource } from "./use-query-resource";
 type Row = Record<string, any>;
 export function detailHref(taskId: string, from: string) {
   return "/tasks/" + taskId + "?" + new URLSearchParams({ from });
@@ -35,10 +36,20 @@ export default function WorkViews({
     path = usePathname(),
     router = useRouter();
   const query = params.toString();
-  const [result, setResult] = useState<Row | null>(null),
-    [pending, setPending] = useState(true),
-    [error, setError] = useState(""),
-    [retry, setRetry] = useState(0);
+  const { cache, expire } = useWorkspace();
+  const requestParams = new URLSearchParams(query);
+  requestParams.set("view", mode);
+  if (mode === "progress" && !requestParams.has("metric"))
+    requestParams.set("metric", "late");
+  const resource = useQueryResource(
+    "/api/work?" + requestParams,
+    cache,
+    revision,
+    expire,
+  );
+  const result = resource.data,
+    pending = resource.pending,
+    error = resource.error;
   const scope =
     params.get("scope") || (user.role === "admin" ? "all" : "owned");
   const metric = params.get("metric") || (mode === "progress" ? "late" : "");
@@ -46,39 +57,15 @@ export default function WorkViews({
       users.find((u) => u._id === id)?.name || "Chưa phân công",
     dept = (id: string) => departments.find((d) => d._id === id)?.name || "—";
   function update(values: Record<string, string>, reset = false) {
-    const q = reset ? new URLSearchParams() : new URLSearchParams(query);
+    const q = reset
+      ? new URLSearchParams()
+      : new URLSearchParams(window.location.search);
     for (const [key, value] of Object.entries(values)) {
       if (value) q.set(key, value);
       else q.delete(key);
     }
-    router.push(path + (q.size ? "?" + q : ""), { scroll: false });
+    window.history.pushState(null, "", path + (q.size ? "?" + q : ""));
   }
-  useEffect(() => {
-    let active = true;
-    setPending(true);
-    setError("");
-    const q = new URLSearchParams(query);
-    q.set("view", mode);
-    if (mode === "progress" && !q.has("metric")) q.set("metric", "late");
-    fetch("/api/work?" + q)
-      .then(async (r) => {
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.error);
-        if (active) setResult(data);
-      })
-      .catch((e) => {
-        if (active) {
-          setError(e.message);
-          setResult(null);
-        }
-      })
-      .finally(() => {
-        if (active) setPending(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [query, mode, revision, retry]);
   function drill(values: Record<string, string>) {
     const q = new URLSearchParams(query);
     q.delete("metric");
@@ -284,7 +271,7 @@ export default function WorkViews({
       {error && (
         <div role="alert" className="error">
           {error}{" "}
-          <button className="retry" onClick={() => setRetry((v) => v + 1)}>
+          <button className="retry" onClick={resource.retry}>
             Thử lại
           </button>
         </div>

@@ -70,6 +70,11 @@ async function handle(
         { error: "Vui lòng đăng nhập" },
         { status: 401 },
       );
+    if (path[0] === "session" && req.method === "GET")
+      return NextResponse.json(
+        { user: serialize(u) },
+        { headers: { "Cache-Control": "private, no-store" } },
+      );
     if (path[0] === "logout" && req.method === "POST") {
       const c = await cookies();
       const token = c.get("organic_session")?.value;

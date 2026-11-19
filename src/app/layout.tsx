@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+import Workspace from "@/components/workspace";
 import "./globals.css";
 import "./brand.css";
 import "./admin.css";
@@ -13,7 +15,13 @@ export const metadata = {
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="vi">
-      <body>{children}</body>
+      <body>
+        <Suspense
+          fallback={<main className="loading">Đang kết nối Organic Work…</main>}
+        >
+          <Workspace>{children}</Workspace>
+        </Suspense>
+      </body>
     </html>
   );
 }

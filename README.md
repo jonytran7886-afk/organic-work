@@ -2,6 +2,10 @@
 
 Ứng dụng quản lý công việc nội bộ Tập đoàn Organic Việt Nam. Next.js App Router, TypeScript, Tailwind CSS và MongoDB Node driver. Dự án độc lập, không sử dụng database của website corporate.
 
+## Điều hướng và tải dữ liệu
+
+Khung sidebar/header nằm trong shared layout, giữ nguyên khi chuyển tab. Dữ liệu trang có cache bộ nhớ theo tài khoản/quyền và revalidate ở nền; thay đổi bộ lọc trên cùng trang không điều hướng RSC. Phiên được kiểm tra riêng khi chuyển path, quyền ghi/đọc vẫn kiểm tra tại backend. Xem [nguyên nhân, cách sửa và kiểm thử chống giật trắng](docs/NAVIGATION_PERFORMANCE.md).
+
 ## Quản trị tài khoản và phòng ban
 
 `/admin` mở `/admin/users` mặc định. Hai trang `/admin/users` và `/admin/departments` dùng chung điều hướng, mỗi trang chỉ có một danh sách. Tài khoản có tìm tên/email và lọc phòng, vai trò, trạng thái trên URL. Thêm, sửa và xem dùng dialog; vô hiệu hóa/kích hoạt lại có xác nhận, form chưa lưu hỏi trước khi bỏ thay đổi. Lỗi trùng email/mã phòng hiển thị cạnh trường và giữ nội dung đã nhập. Không có xóa vĩnh viễn.
