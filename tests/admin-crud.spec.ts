@@ -1,3 +1,4 @@
+import { navTo } from "./helpers/navigation";
 import { test, expect, Page } from "@playwright/test";
 const password = process.env.DEMO_PASSWORD!;
 async function login(p: Page, email = "admin") {
@@ -26,13 +27,13 @@ test("Route riêng, lịch sử trình duyệt, dialog tạo, lỗi email trùng
   page,
 }) => {
   await login(page);
-  await page.getByRole("link", { name: "Quản trị", exact: false }).click();
+  await page.getByRole("link", { name: "Tài khoản", exact: true }).click();
   await expect(page).toHaveURL(/\/admin\/users$/);
   await expect(
     page.getByRole("heading", { name: "Tài khoản", exact: true }),
   ).toBeVisible();
   await expect(page.locator("form")).toHaveCount(0);
-  await page.getByRole("link", { name: "Phòng ban", exact: true }).click();
+  await navTo(page, "Phòng ban");
   await expect(page).toHaveURL(/\/admin\/departments$/);
   await expect(
     page.getByRole("heading", { name: "Phòng ban", exact: true }),
@@ -342,7 +343,7 @@ test("Dialog CRUD ở 390/1440 px, keyboard, lỗi lưu giữ nội dung và kh�
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await page.getByRole("link", { name: "Phòng ban", exact: true }).click();
+  await navTo(page, "Phòng ban");
   await page.screenshot({
     path: "docs/admin-departments-mobile.png",
     fullPage: true,

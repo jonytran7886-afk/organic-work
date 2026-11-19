@@ -3,6 +3,7 @@ import Workspace from "@/components/workspace";
 import "./globals.css";
 import "./brand.css";
 import "./admin.css";
+import "./navigation.css";
 export const metadata = {
   title: "Organic Work — Không gian làm việc",
   description:

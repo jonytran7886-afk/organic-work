@@ -8,7 +8,7 @@ Khung sidebar/header nằm trong shared layout, giữ nguyên khi chuyển tab. 
 
 ## Quản trị tài khoản và phòng ban
 
-`/admin` mở `/admin/users` mặc định. Hai trang `/admin/users` và `/admin/departments` dùng chung điều hướng, mỗi trang chỉ có một danh sách. Tài khoản có tìm tên/email và lọc phòng, vai trò, trạng thái trên URL. Thêm, sửa và xem dùng dialog; vô hiệu hóa/kích hoạt lại có xác nhận, form chưa lưu hỏi trước khi bỏ thay đổi. Lỗi trùng email/mã phòng hiển thị cạnh trường và giữ nội dung đã nhập. Không có xóa vĩnh viễn.
+`/admin` mở `/admin/users` mặc định. Sidebar có nhóm **Công việc** (Việc của tôi → Công việc phòng ban → Tiến độ theo quyền) và nhóm **Quản trị** chỉ cho Admin (Tài khoản → Phòng ban). Hai mục quản trị mở trực tiếp trang riêng; không còn tab phía trên nội dung. Mobile dùng drawer, đóng sau khi chọn mục. Xem [nghiệm thu sidebar/drawer và URL cũ](docs/SIDEBAR_ADMIN.md). Mỗi trang chỉ có một danh sách. Tài khoản có tìm tên/email và lọc phòng, vai trò, trạng thái trên URL. Thêm, sửa và xem dùng dialog; vô hiệu hóa/kích hoạt lại có xác nhận, form chưa lưu hỏi trước khi bỏ thay đổi. Lỗi trùng email/mã phòng hiển thị cạnh trường và giữ nội dung đã nhập. Không có xóa vĩnh viễn.
 
 Chỉ Admin truy cập các route và API quản trị. Giữ quy tắc Admin cuối cùng và xử lý việc mở trước khi chuyển phòng. Form sửa không đổi mật khẩu; phiên bản này chưa có thao tác đặt lại mật khẩu riêng. Xem [nghiệm thu quản trị CRUD](docs/ADMIN_CRUD.md).
 

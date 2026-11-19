@@ -2,6 +2,8 @@
 
 Thực hiện theo [prompt quản trị](ADMIN_CRUD_BRIEF.md), giữ nhận diện xanh Organic và MongoDB làm nguồn dữ liệu.
 
+Ghi chú phiên bản: phần tab điều hướng trong báo cáo này đã được thay bằng [nhóm sidebar và drawer mobile](SIDEBAR_ADMIN.md). Các luồng dialog CRUD vẫn giữ nguyên.
+
 ## Bố cục mới
 
 - `/admin` mở `/admin/users` mặc định.

@@ -5,8 +5,10 @@ import AdminRoute from "@/components/admin-route";
 export const runtime = "nodejs";
 export default async function Page({
   params,
+  searchParams,
 }: {
   params: Promise<{ page?: string[] }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const segments = (await params).page || [];
   if (segments[0] === "admin") {
@@ -21,11 +23,29 @@ export default async function Page({
           </Link>
         </main>
       );
+    const query = await searchParams;
+    const tab = Array.isArray(query.tab) ? query.tab[0] : query.tab;
     if (
       user &&
-      (segments.length === 1 || !["users", "departments"].includes(segments[1]))
-    )
-      redirect("/admin/users");
+      (segments.length !== 2 ||
+        !["users", "departments"].includes(segments[1]) ||
+        tab !== undefined)
+    ) {
+      const section =
+        tab === "departments"
+          ? "departments"
+          : tab === "users"
+            ? "users"
+            : segments[1] === "departments"
+              ? "departments"
+              : "users";
+      const remaining = new URLSearchParams();
+      for (const [key, value] of Object.entries(query)) {
+        if (key !== "tab" && typeof value === "string")
+          remaining.set(key, value);
+      }
+      redirect("/admin/" + section + (remaining.size ? "?" + remaining : ""));
+    }
   }
   return segments[0] === "admin" ? <AdminRoute /> : null;
 }

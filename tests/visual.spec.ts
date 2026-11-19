@@ -1,3 +1,4 @@
+import { navTo } from "./helpers/navigation";
 import { test, expect } from "@playwright/test";
 test("Bố cục Việc của tôi, Tiến độ và Kanban ở 1440/390 px", async ({
   page,
@@ -35,12 +36,10 @@ test("Bố cục Việc của tôi, Tiến độ và Kanban ở 1440/390 px", as
   await expect(page).toHaveURL(/\/my-tasks$/);
   await expect(page.locator(".work-task").first()).toBeVisible();
   await page.screenshot({ path: "docs/my-tasks-desktop.png", fullPage: true });
-  await page.getByRole("link", { name: "Tiến độ", exact: true }).click();
+  await navTo(page, "Tiến độ");
   await expect(page.locator(".progress-stats")).toBeVisible();
   await page.screenshot({ path: "docs/progress-desktop.png", fullPage: true });
-  await page
-    .getByRole("link", { name: "Công việc phòng ban", exact: false })
-    .click();
+  await navTo(page, "Công việc phòng ban");
   await expect(page.locator(".kanban")).toBeVisible();
   await page.screenshot({ path: "docs/kanban-desktop.png", fullPage: true });
   expect(
@@ -56,7 +55,7 @@ test("Bố cục Việc của tôi, Tiến độ và Kanban ở 1440/390 px", as
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await page.getByRole("link", { name: "Việc của tôi", exact: false }).click();
+  await navTo(page, "Việc của tôi");
   await expect(page.locator(".work-task").first()).toBeVisible();
   expect(
     await page
@@ -65,7 +64,7 @@ test("Bố cục Việc của tôi, Tiến độ và Kanban ở 1440/390 px", as
       .evaluate((e) => e.getBoundingClientRect().top),
   ).toBeLessThan(844);
   await page.screenshot({ path: "docs/my-tasks-mobile.png", fullPage: true });
-  await page.getByRole("link", { name: "Tiến độ", exact: true }).click();
+  await navTo(page, "Tiến độ");
   await expect(page.locator(".progress-stats")).toBeVisible();
   await page.screenshot({ path: "docs/progress-mobile.png", fullPage: true });
   expect(

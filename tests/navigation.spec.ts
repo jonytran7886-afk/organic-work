@@ -7,7 +7,7 @@ async function login(page: Page, email = "admin") {
     .fill(process.env.DEMO_PASSWORD!);
   await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
   await expect(page).toHaveURL(/\/my-tasks$/);
-  await expect(page.locator(".sidebar")).toBeVisible();
+  await expect(page.locator(".desktop-sidebar")).toBeVisible();
 }
 test("Chuyển tab giữ nguyên sidebar/header, không tải lại bootstrap hoặc trắng trang khi API chậm", async ({
   page,
@@ -21,7 +21,7 @@ test("Chuyển tab giữ nguyên sidebar/header, không tải lại bootstrap ho
   await page.evaluate(() => {
     const w = window as any;
     w.__shell = {
-      sidebar: document.querySelector(".sidebar"),
+      sidebar: document.querySelector(".desktop-sidebar"),
       topbar: document.querySelector(".topbar"),
       removed: false,
       startup: false,
@@ -43,7 +43,7 @@ test("Chuyển tab giữ nguyên sidebar/header, không tải lại bootstrap ho
   for (const [label, ready] of [
     ["Tiến độ", ".progress-stats"],
     ["Công việc phòng ban", ".kanban"],
-    ["Quản trị", ".admin-console"],
+    ["Tài khoản", ".admin-console"],
   ] as const) {
     await page.getByRole("link", { name: label, exact: true }).click();
     await expect(page.locator(ready)).toBeVisible();
@@ -51,7 +51,7 @@ test("Chuyển tab giữ nguyên sidebar/header, không tải lại bootstrap ho
       await page.evaluate(() => {
         const w = window as any;
         return (
-          document.querySelector(".sidebar") === w.__shell.sidebar &&
+          document.querySelector(".desktop-sidebar") === w.__shell.sidebar &&
           document.querySelector(".topbar") === w.__shell.topbar
         );
       }),

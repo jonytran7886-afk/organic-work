@@ -1,0 +1,214 @@
+.nav-group {
+  margin-top: 25px;
+}
+.nav-group .nav-label {
+  font-size: 12px;
+  letter-spacing: 0.7px;
+  text-transform: none;
+  color: #afceb9;
+  font-weight: 600;
+  margin: 0 12px 10px;
+}
+.nav-group + .nav-group {
+  border-top: 1px solid #ffffff1b;
+  padding-top: 22px;
+  margin-top: 24px;
+}
+.sidebar nav a[aria-current="page"] {
+  background: #f1f8ed;
+  color: var(--organic-green);
+}
+.mobile-app-header {
+  display: none;
+}
+.navigation-drawer:not([open]) {
+  display: none;
+}
+.navigation-drawer {
+  border: 0;
+  padding: 0;
+  position: fixed;
+  inset: 0 auto 0 0;
+  margin: 0;
+  width: min(338px, calc(100vw - 36px));
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  background: var(--organic-forest);
+  color: #fff;
+  overflow: hidden;
+  box-shadow: 10px 0 50px #00271930;
+}
+.navigation-drawer::backdrop {
+  background: #042e2390;
+  backdrop-filter: blur(2px);
+}
+.drawer-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.drawer-close {
+  background: #ffffff15;
+  border: 1px solid #ffffff25;
+  border-radius: 8px;
+  color: #edf8e7;
+  width: 33px;
+  height: 33px;
+  font-size: 25px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.navigation-drawer .drawer-sidebar {
+  position: static;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  padding: 22px 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-shadow: none;
+}
+.navigation-drawer .drawer-sidebar .brand {
+  font-size: 20px;
+  gap: 9px;
+}
+.navigation-drawer .drawer-sidebar .brand-symbol-shell {
+  width: 42px;
+  height: 42px;
+}
+.navigation-drawer .drawer-sidebar .brand-wordmark small {
+  font-size: 9px;
+}
+.navigation-drawer .drawer-sidebar .brand .organic-symbol {
+  width: 35px;
+  height: 33px;
+}
+.navigation-drawer .team-note {
+  display: none;
+}
+.navigation-drawer .profile {
+  margin-top: 25px;
+}
+.navigation-drawer .sidebar-bottom {
+  margin-top: auto;
+}
+.admin-list-heading {
+  margin-top: 0;
+}
+@media (min-width: 681px) {
+  .navigation-drawer {
+    display: none;
+  }
+}
+@media (max-width: 680px) {
+  .desktop-sidebar {
+    display: none;
+  }
+  .mobile-app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 15px 16px;
+    background: var(--organic-forest);
+  }
+  .mobile-app-header .brand {
+    font-size: 21px;
+    gap: 9px;
+  }
+  .mobile-app-header .brand-wordmark {
+    color: #fff;
+  }
+  .mobile-app-header .brand-wordmark small {
+    color: #b6d998;
+    font-size: 9px;
+    letter-spacing: 1.2px;
+    margin-top: 5px;
+  }
+  .mobile-app-header .brand-symbol-shell {
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: 10px;
+  }
+  .mobile-app-header .organic-symbol {
+    width: 33px;
+    height: 31px;
+  }
+  .drawer-trigger {
+    width: 41px;
+    height: 41px;
+    display: grid;
+    place-items: center;
+    color: #e8f3e2;
+    background: #ffffff0d;
+    border: 1px solid #ffffff29;
+    border-radius: 8px;
+  }
+  .navigation-drawer[open] {
+    display: block;
+  }
+  .navigation-drawer .workspace-label {
+    display: flex;
+    margin-top: 22px;
+    flex-shrink: 0;
+  }
+  .navigation-drawer .nav-label {
+    display: block;
+    font-size: 12px !important;
+    margin: 0 12px 10px;
+  }
+  .navigation-drawer nav {
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+    gap: 6px;
+    margin-top: 0;
+  }
+  .navigation-drawer nav a {
+    font-size: 14px !important;
+    padding: 13px 12px;
+    gap: 11px;
+    white-space: normal;
+  }
+  .navigation-drawer .nav-count {
+    display: inline-block;
+  }
+  .navigation-drawer .sidebar-bottom {
+    display: block;
+  }
+  .navigation-drawer .team-note {
+    display: none;
+  }
+  .navigation-drawer .profile {
+    display: flex;
+  }
+  .navigation-drawer .profile .logout {
+    display: block;
+  }
+  .navigation-drawer .sidebar nav a.selected:before {
+    width: 3px;
+    height: 20px;
+    left: 0;
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+  }
+  .navigation-drawer .nav-group {
+    flex-shrink: 0;
+    margin-top: 25px;
+  }
+  .navigation-drawer .sidebar nav .icon {
+    width: 21px;
+    height: 21px;
+  }
+  .navigation-drawer .profile strong {
+    font-size: 14px;
+  }
+  .navigation-drawer .profile small {
+    font-size: 12px;
+  }
+}

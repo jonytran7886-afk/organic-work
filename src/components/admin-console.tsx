@@ -269,20 +269,6 @@ export default function AdminConsole({
   }
   return (
     <section className="admin-console">
-      <nav className="admin-tabs" aria-label="Quản trị">
-        <Link
-          href="/admin/users"
-          aria-current={kind === "user" ? "page" : undefined}
-        >
-          Tài khoản
-        </Link>
-        <Link
-          href="/admin/departments"
-          aria-current={kind === "department" ? "page" : undefined}
-        >
-          Phòng ban
-        </Link>
-      </nav>
       <div className="admin-list-heading">
         <div>
           <h1>{kind === "user" ? "Tài khoản" : "Phòng ban"}</h1>

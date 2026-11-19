@@ -12,7 +12,6 @@ import {
   statuses,
   statusNames,
   priorityNames,
-  roleNames,
   overdue,
   canManage,
   canStatus,
@@ -21,6 +20,8 @@ import WorkViews, { detailHref } from "./work-views";
 import { WorkspaceContext, type CacheEntry } from "./workspace-context";
 import { useQueryResource } from "./use-query-resource";
 import { BrandLockup, OrganicSymbol, CorporateLogo } from "./brand";
+import SideNavigation from "./side-navigation";
+import Icon from "./ui-icon";
 import { safeReturnPath, waitingLabel } from "@/lib/work-model";
 type Row = Record<string, any>;
 type Task = Row & { status: string; dueDate?: string | null };
@@ -33,53 +34,6 @@ async function api(path: string, body?: any, method?: string) {
   const v = await r.json();
   if (!r.ok) throw new Error(v.error || "Không thể kết nối");
   return v;
-}
-function Icon({ name }: { name: string }) {
-  const paths: Record<string, React.ReactNode> = {
-    mine: (
-      <>
-        <rect x="4" y="4" width="16" height="16" rx="4" />
-        <path d="m8 12 3 3 5-6" />
-      </>
-    ),
-    progress: (
-      <>
-        <path d="M4 4v16h16M8 15v-4m5 4V7m5 8v-6" />
-      </>
-    ),
-    board: (
-      <>
-        <rect x="3" y="4" width="18" height="16" rx="3" />
-        <path d="M9 4v16m6-16v16M6 8v4m6-4v7m6-7v3" />
-      </>
-    ),
-    admin: (
-      <>
-        <path d="m12 3 8 4v5c0 4-4 7-8 9-4-2-8-5-8-9V7z" />
-        <path d="m8 12 3 3 5-6" />
-      </>
-    ),
-    search: (
-      <>
-        <circle cx="10.5" cy="10.5" r="6.5" />
-        <path d="m16 16 4.5 4.5" />
-      </>
-    ),
-  };
-  return (
-    <svg
-      className="icon"
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.65"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {paths[name] || paths.board}
-    </svg>
-  );
 }
 export default function Workspace({ children }: { children: ReactNode }) {
   const path = usePathname();
@@ -408,85 +362,22 @@ export default function Workspace({ children }: { children: ReactNode }) {
       value={{ data: data!, refresh, cache: resourceCache, expire }}
     >
       <div className="app">
-        <aside className="sidebar">
-          <BrandLockup />
-          <div className="workspace-label">
-            <span className="company-logo">
-              <OrganicSymbol />
-            </span>
-            <div>
-              <strong>Organic Việt Nam</strong>
-              <small>{dept(user.departmentId)}</small>
-            </div>
-          </div>
-          <p className="nav-label">KHÔNG GIAN LÀM VIỆC</p>
-          <nav>
-            {[
-              ["mine", "/my-tasks", "Việc của tôi"],
-              ...(user.role !== "employee"
-                ? [["progress", "/progress", "Tiến độ"]]
-                : []),
-              ["board", "/board", "Công việc phòng ban"],
-              ...(user.role === "admin"
-                ? [["admin", "/admin/users", "Quản trị"]]
-                : []),
-            ].map(([key, url, label]) => (
-              <Link
-                key={key}
-                href={url}
-                className={page === key ? "selected" : ""}
-              >
-                <Icon name={key} />
-                {label}
-                {key === "mine" && (
-                  <span className="nav-count">
-                    {
-                      active.filter(
-                        (t) => t.assigneeId === user._id && t.status !== "done",
-                      ).length
-                    }
-                  </span>
-                )}
-              </Link>
-            ))}
-          </nav>
-          <div className="sidebar-bottom">
-            <div className="team-note">
-              <OrganicSymbol />
-              <strong>
-                Cùng vun đắp
-                <br />
-                giá trị bền vững.
-              </strong>
-              <p>
-                Mỗi công việc hoàn thành,
-                <br />
-                một bước tiến cùng Organic.
-              </p>
-            </div>
-            <div className="profile">
-              <span className="avatar">{user.name.slice(0, 1)}</span>
-              <div>
-                <strong>{user.name}</strong>
-                <small>{roleNames[user.role]}</small>
-              </div>
-              <button
-                className="logout"
-                title="Đăng xuất"
-                aria-label="Đăng xuất"
-                onClick={() =>
-                  action(async () => {
-                    await api("logout", {});
-                    expire();
-                    router.push("/login");
-                  })
-                }
-              >
-                ⏻
-              </button>
-            </div>
-          </div>
-        </aside>
+        <SideNavigation
+          user={user}
+          departmentName={dept(user.departmentId)}
+          myCount={
+            active.filter(
+              (t) => t.assigneeId === user._id && t.status !== "done",
+            ).length
+          }
+          onLogout={() =>
+            action(async () => {
+              await api("logout", {});
+              expire();
+              router.push("/login");
+            })
+          }
+        />
         <div className="main-wrap">
           <header className="topbar">
             <span>

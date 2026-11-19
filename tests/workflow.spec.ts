@@ -1,3 +1,4 @@
+import { navTo } from "./helpers/navigation";
 import { test, expect, Page, Browser } from "@playwright/test";
 const password = process.env.DEMO_PASSWORD!;
 async function login(page: Page, email: string) {
@@ -181,7 +182,7 @@ test("Admin tạo phòng và tài khoản; vô hiệu hóa thu hồi phiên", as
 }) => {
   const a = await browser.newPage();
   await login(a, "admin");
-  await a.getByRole("link", { name: "Quản trị", exact: false }).click();
+  await a.getByRole("link", { name: "Tài khoản", exact: true }).click();
   const suffix = Date.now();
   await a.getByRole("link", { name: "Phòng ban", exact: true }).click();
   await a.getByRole("button", { name: "Thêm phòng ban", exact: false }).click();
@@ -250,9 +251,7 @@ test("Admin tạo phòng và tài khoản; vô hiệu hóa thu hồi phiên", as
 test("Giao diện mobile ưu tiên danh sách", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page, "nv.vanhanh");
-  await page
-    .getByRole("link", { name: "Công việc phòng ban", exact: false })
-    .click();
+  await navTo(page, "Công việc phòng ban");
   await expect(page.locator(".mobile-list")).toBeVisible();
   await expect(page.locator(".board-mode")).toBeHidden();
   await page.locator(".mobile-list select").first().selectOption("doing");
