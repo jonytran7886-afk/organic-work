@@ -9,18 +9,18 @@ Ghi chú phiên bản: phần tab điều hướng trong báo cáo này đã đ�
 - `/admin` mở `/admin/users` mặc định.
 - `/admin/users`: một danh sách tài khoản, nút Thêm tài khoản, tìm tên/email, lọc phòng ban/vai trò/trạng thái. Điều kiện nằm trên URL.
 - `/admin/departments`: một danh sách phòng ban, tên và mã dạng văn bản, nút Thêm phòng ban. Không còn ô sửa và nút Lưu lặp trên từng dòng.
-- Hai trang dùng chung tab Quản trị, mục đang chọn và breadcrumb. Mobile chuyển bảng sang thẻ có đầy đủ thông tin và menu thao tác.
+- Hai trang nằm trong nhóm Quản trị trên sidebar, có mục đang chọn và breadcrumb riêng. Mobile dùng drawer điều hướng và chuyển bảng sang thẻ có đầy đủ thông tin và menu thao tác.
 - Form chỉ mở trong dialog. Xem là chế độ chỉ đọc; chuyển sang sửa trong cùng một dialog. Không có xóa vĩnh viễn.
 
 ## Dialog và lưu dữ liệu
 
 Tài khoản có thêm, xem, sửa, xác nhận vô hiệu hóa và kích hoạt lại. Mật khẩu chỉ nhập khi tạo; chưa có thao tác đặt lại mật khẩu chuyên biệt nên không đổi mật khẩu trong form sửa. Trạng thái của tài khoản đang có được đổi qua menu có xác nhận, thay vì thay trực tiếp trong form sửa.
 
-Phòng ban có thêm, xem và sửa; mã và ID được giữ ổn định khi sửa. Backend từ chối yêu cầu đổi mã qua API. Đổi tên không làm thay đổi tham chiếu từ tài khoản/công việc.
+Phòng ban có thêm, xem và sửa. Khi thêm chỉ nhập tên; server tự cấp mã dạng `PB-000001` bằng bộ đếm MongoDB trong `system_counters`, kết hợp unique index và thử lại khi gặp mã cũ đã tồn tại. Client không quyết định mã. Khi sửa, dialog hiển thị mã dưới dạng văn bản; mã và ID được giữ ổn định. Backend từ chối yêu cầu đổi mã qua API. Đổi tên không làm thay đổi tham chiếu từ tài khoản/công việc.
 
 Form dùng bản nháp riêng cho từng lần mở, hỏi xác nhận khi Hủy/Đóng/Escape/bấm nền nếu đã sửa. Hộp xác nhận thay nội dung dialog hiện tại, không chồng nhiều dialog. Nội dung dài cuộn bên trong, footer thao tác giữ trong khung. Tab/Shift+Tab giữ focus; đóng trả focus về nút mở hoặc nút menu của dòng, nếu dòng biến mất do bộ lọc thì về nút thêm.
 
-Gửi có khóa chống lặp, nút Đang lưu, chờ API xác nhận rồi tải lại danh sách MongoDB. Thành công hiển thị thông báo; nếu bản ghi không khớp bộ lọc hiện tại, thông báo nêu rõ và không đưa bản ghi sai vào danh sách. Lỗi giữ dialog và bản nháp; email/mã phòng trùng được báo cạnh trường. Tìm kiếm, bộ lọc và vị trí cuộn được giữ khi danh sách cho phép.
+Gửi có khóa chống lặp, nút Đang lưu, chờ API xác nhận rồi tải lại danh sách MongoDB. Thành công hiển thị thông báo; nếu bản ghi không khớp bộ lọc hiện tại, thông báo nêu rõ và không đưa bản ghi sai vào danh sách. Lỗi giữ dialog và bản nháp; email trùng được báo cạnh trường. Mã phòng được cấp tự động ở server. Tìm kiếm, bộ lọc và vị trí cuộn được giữ khi danh sách cho phép.
 
 ## Quyền và ràng buộc
 
@@ -77,3 +77,13 @@ Lượt chạy cuối: **12/12 E2E đạt**, 47,5 giây, trên production build 
 `npm run test:integration` đạt trên MongoDB thật, gồm bảo vệ Admin, chuyển phòng, transaction và các kiểm tra nghiệp vụ trước đó. `npm run typecheck` đạt; production build đạt trước E2E. Không có ca local bắt buộc nào còn bị chặn. Các giới hạn đa trình duyệt/triển khai đã nêu ở trên.
 
 Các lỗi phát hiện và sửa: nút chuyển Xem→Sửa có thể tự submit; autofocus trễ có thể chuyển focus trong lúc nhập; vòng Tab của dialog; cập nhật liên tiếp bộ lọc URL làm mất giá trị tìm kiếm. Các ca tương ứng đều có kiểm thử đạt ở lượt cuối.
+
+## Nghiệm thu bổ sung: tự cấp mã phòng ban — 20/11/2026
+
+- `npm run test:integration`: đạt trên MongoDB test local; kiểm tra ba yêu cầu tạo đồng thời có mã khác nhau, bỏ qua mã cũ trùng, không nhận mã do client đặt và từ chối thay mã khi sửa.
+- `npm run test:e2e`: **17/17 đạt, 47,3 giây**, trên production build với Chromium; gồm tạo phòng chỉ bằng tên, reload còn mã, đổi tên giữ mã/ID và tham chiếu tài khoản/công việc, CRUD tài khoản, quyền Admin, sidebar/drawer, bàn phím và bố cục 1440/390 px.
+- `npm run typecheck`, kiểm tra Prettier cho các tệp mã thay đổi và `git diff --check`: đạt. Production build được chạy thành công trong bộ E2E.
+- Hai lượt E2E đầu có 16/17 bài đạt: bài hồi quy Tiến độ đọc tức thời danh sách option trong lúc giao diện cập nhật nên nhận mảng rỗng. Đã thay bằng assertion Playwright chờ trực tiếp trên bộ chọn; lượt cuối toàn bộ bộ kiểm thử đạt.
+- Tệp liên quan: `src/components/admin-console.tsx`, `src/lib/service.ts`, `scripts/db.ts`, `scripts/integration.ts`, `tests/admin-crud.spec.ts`, `tests/workflow.spec.ts`, `tests/layout-progress.spec.ts`. Route tiếp tục là `/admin/users` và `/admin/departments`.
+
+Ảnh nghiệm thu quản trị và sidebar được cập nhật bằng dữ liệu test. Chưa kiểm thử Safari/Firefox hoặc triển khai Atlas/HTTPS trong lượt bổ sung này.

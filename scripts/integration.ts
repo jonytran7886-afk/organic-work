@@ -319,14 +319,12 @@ try {
   const finished = await d.collection("tasks").findOne({ _id: task._id });
   assert.equal(finished!.waitingReason, null);
   assert(
-    await d
-      .collection("task_activities")
-      .findOne({
-        taskId: task._id,
-        type: "waitingReason",
-        before: "Chờ quản lý xác nhận",
-        after: null,
-      }),
+    await d.collection("task_activities").findOne({
+      taskId: task._id,
+      type: "waitingReason",
+      before: "Chờ quản lý xác nhận",
+      after: null,
+    }),
   );
   const completed = await queryWork(
     worker,
@@ -335,6 +333,61 @@ try {
   assert(completed.tasks.some((t) => String(t._id) === String(task._id)));
   console.log(
     "PASS nhóm mốc ngày, ưu tiên, lý do chờ/rollback/lịch sử, scope và mọi bộ đếm Tiến độ",
+  );
+  const counter = await d
+    .collection("system_counters")
+    .findOne({ _id: "department_code" } as any);
+  const reservedCode =
+    "PB-" + String((counter?.value || 0) + 1).padStart(6, "0");
+  await d.collection("departments").insertOne({
+    name: "Mã cũ đã tồn tại",
+    code: reservedCode,
+    createdAt: new Date(),
+  });
+  const autoIds = await Promise.all(
+    [0, 1, 2].map((index) =>
+      adminWrite(admin, {
+        kind: "department",
+        name: "Tự cấp mã " + Date.now() + " " + index,
+        code: "CLIENT-CANNOT-SET",
+      }),
+    ),
+  );
+  const autoDepartments = await d
+    .collection("departments")
+    .find({ _id: { $in: autoIds } })
+    .toArray();
+  assert.equal(new Set(autoDepartments.map((row) => row.code)).size, 3);
+  assert(
+    autoDepartments.every(
+      (row) =>
+        /^PB-\d{6,}$/.test(row.code) &&
+        row.code !== reservedCode &&
+        row.code !== "CLIENT-CANNOT-SET",
+    ),
+  );
+  const chosen = autoDepartments[0];
+  await adminWrite(admin, {
+    kind: "department",
+    _id: String(chosen._id),
+    name: "Tên mới không đổi mã",
+  });
+  assert.equal(
+    (await d.collection("departments").findOne({ _id: chosen._id }))!.code,
+    chosen.code,
+  );
+  await assert.rejects(
+    () =>
+      adminWrite(admin, {
+        kind: "department",
+        _id: String(chosen._id),
+        name: "Không đổi mã",
+        code: "FORGED",
+      }),
+    /giữ ổn định/,
+  );
+  console.log(
+    "PASS cấp mã phòng tự động đồng thời, bỏ qua mã cũ trùng và giữ mã khi đổi tên",
   );
   console.log("PERSISTENCE_TASK_ID=" + task._id);
 } finally {

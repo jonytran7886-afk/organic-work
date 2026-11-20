@@ -145,41 +145,30 @@ test("Route riêng, lịch sử trình duyệt, dialog tạo, lỗi email trùng
     .click();
   await expect(page.locator("tbody tr")).toHaveCount(0);
 });
-test("Phòng ban dialog, mã trùng, mã ổn định, tham chiếu tài khoản/công việc và bảo vệ Admin", async ({
+test("Phòng ban tự tạo mã, giữ mã khi đổi tên, tham chiếu tài khoản/công việc và bảo vệ Admin", async ({
   page,
   browser,
 }) => {
   await login(page);
   await page.goto("/admin/departments");
   const suffix = Date.now(),
-    name = "Phòng CRUD " + suffix,
-    code = "crud-" + suffix;
+    name = "Phòng CRUD " + suffix;
   await page
     .getByRole("button", { name: "Thêm phòng ban", exact: false })
     .click();
   let d = page.getByRole("dialog");
   await d.getByLabel("Tên phòng ban", { exact: true }).fill(name);
-  await d.getByLabel("Mã phòng ổn định").fill(code);
+  await expect(d.locator("input[name=code]")).toHaveCount(0);
   await d.getByRole("button", { name: "Tạo phòng ban", exact: true }).click();
   await expect(d).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "Thêm phòng ban", exact: false })
-    .click();
-  d = page.getByRole("dialog");
-  await d.getByLabel("Tên phòng ban", { exact: true }).fill("Nội dung giữ lại");
-  await d.getByLabel("Mã phòng ổn định").fill(code);
-  await d.getByRole("button", { name: "Tạo phòng ban", exact: true }).click();
-  await expect(d.locator("#error-code")).toHaveText("Mã phòng đã tồn tại");
-  await expect(d.getByLabel("Tên phòng ban", { exact: true })).toHaveValue(
-    "Nội dung giữ lại",
-  );
-  await d.getByRole("button", { name: "Hủy", exact: true }).click();
-  await page
-    .getByRole("alertdialog")
-    .getByRole("button", { name: "Bỏ thay đổi", exact: true })
-    .click();
   const before = await (await page.request.get("/api/admin")).json();
-  const department = before.departments.find((v: any) => v.code === code);
+  const department = before.departments.find((v: any) => v.name === name);
+  const code = department.code;
+  expect(code).toMatch(/^PB-\d{6,}$/);
+  await page.reload();
+  await expect(page.locator("tr").filter({ hasText: name })).toContainText(
+    code,
+  );
   await page.goto("/admin/users");
   await page
     .getByRole("button", { name: "Thêm tài khoản", exact: false })
@@ -211,8 +200,8 @@ test("Phòng ban dialog, mã trùng, mã ổn định, tham chiếu tài khoản
   await page.goto("/admin/departments");
   await menu(page, name, "Chỉnh sửa");
   d = page.getByRole("dialog");
-  await expect(d.getByLabel("Mã phòng ổn định")).toBeDisabled();
-  await expect(d.getByLabel("Mã phòng ổn định")).toHaveValue(code);
+  await expect(d.locator("input[name=code]")).toHaveCount(0);
+  await expect(d).toContainText(code);
   await d.getByLabel("Tên phòng ban", { exact: true }).fill(name + " mới");
   await d.getByRole("button", { name: "Lưu thay đổi", exact: true }).click();
   await expect(d).toHaveCount(0);

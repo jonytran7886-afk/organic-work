@@ -17,7 +17,6 @@ type Draft = {
   departmentId: string;
   role: string;
   active: boolean;
-  code: string;
 };
 function initial(record: Row, departmentId = ""): Draft {
   return {
@@ -27,7 +26,6 @@ function initial(record: Row, departmentId = ""): Draft {
     departmentId: record.departmentId || departmentId,
     role: record.role || "employee",
     active: record.active ?? true,
-    code: record.code || "",
   };
 }
 export default function AdminConsole({
@@ -149,9 +147,7 @@ export default function AdminConsole({
             ? {
                 kind: "department",
                 name: draft.name,
-                ...(editor.mode === "edit"
-                  ? { _id: editor.record._id }
-                  : { code: draft.code }),
+                ...(editor.mode === "edit" ? { _id: editor.record._id } : {}),
               }
             : {
                 kind: "user",
@@ -766,20 +762,15 @@ export default function AdminConsole({
                     </p>
                   )}
                 </>
+              ) : editor.mode === "edit" ? (
+                <p className="hint">
+                  Mã phòng: <strong>{editor.record.code}</strong> — được giữ
+                  nguyên khi đổi tên.
+                </p>
               ) : (
-                field(
-                  "Mã phòng ổn định",
-                  "code",
-                  <input
-                    name="code"
-                    disabled={editor.mode === "edit"}
-                    required
-                    pattern="[a-zA-Z0-9_-]{2,40}"
-                    value={draft.code}
-                    onChange={(e) => update("code", e.target.value)}
-                    {...inputProps("code")}
-                  />,
-                )
+                <p className="hint">
+                  Mã phòng ban được hệ thống tạo tự động khi lưu.
+                </p>
               )}
             </form>
           )}

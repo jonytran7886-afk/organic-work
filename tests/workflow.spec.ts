@@ -190,7 +190,6 @@ test("Admin tạo phòng và tài khoản; vô hiệu hóa thu hồi phiên", as
   await dialog
     .getByLabel("Tên phòng ban", { exact: true })
     .fill("Phòng kiểm thử " + suffix);
-  await dialog.getByLabel("Mã phòng ổn định").fill("test-" + suffix);
   await dialog
     .getByRole("button", { name: "Tạo phòng ban", exact: true })
     .click();

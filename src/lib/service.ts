@@ -281,17 +281,35 @@ export async function adminWrite(u: any, input: any) {
         .collection("departments")
         .updateOne({ _id: existing._id }, { $set: { name } });
       return existing._id;
-    } else
-      return (
-        await d.collection("departments").insertOne({
-          name,
-          code: z
-            .string()
-            .regex(/^[a-zA-Z0-9_-]{2,40}$/)
-            .parse(input.code),
-          createdAt: new Date(),
-        })
-      ).insertedId;
+    }
+    // MongoDB allocates codes atomically, independent of the display name or client payload.
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const counter = await d
+        .collection<{ _id: string; value: number }>("system_counters")
+        .findOneAndUpdate(
+          { _id: "department_code" },
+          { $inc: { value: 1 } },
+          { upsert: true, returnDocument: "after" },
+        );
+      if (!counter)
+        throw new AdminInputError(
+          "Không thể tạo mã phòng ban. Vui lòng thử lại.",
+        );
+      const code = "PB-" + String(counter.value).padStart(6, "0");
+      try {
+        return (
+          await d
+            .collection("departments")
+            .insertOne({ name, code, createdAt: new Date() })
+        ).insertedId;
+      } catch (error: any) {
+        if (error.code === 11000 && error.keyPattern?.code) continue;
+        throw error;
+      }
+    }
+    throw new AdminInputError(
+      "Không thể cấp mã phòng ban duy nhất. Vui lòng thử lại.",
+    );
   }
   if (input.kind !== "user")
     throw new AdminInputError("Loại dữ liệu không hợp lệ");

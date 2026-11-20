@@ -18,6 +18,7 @@ export async function setup() {
     "sessions",
     "login_attempts",
     "system_locks",
+    "system_counters",
   ])
     if (!(await d.listCollections({ name }).hasNext()))
       await d.createCollection(name);
@@ -142,23 +143,21 @@ export async function seed() {
       },
       { upsert: true },
     );
-  await d
-    .collection("users")
-    .updateOne(
-      { email: "nv.nghi@organic.vn" },
-      {
-        $setOnInsert: {
-          email: "nv.nghi@organic.vn",
-          name: "Tài khoản đã tắt",
-          role: "employee",
-          departmentId: dep("operations"),
-          passwordHash: hashPassword(password),
-          active: false,
-          createdAt: new Date(),
-        },
+  await d.collection("users").updateOne(
+    { email: "nv.nghi@organic.vn" },
+    {
+      $setOnInsert: {
+        email: "nv.nghi@organic.vn",
+        name: "Tài khoản đã tắt",
+        role: "employee",
+        departmentId: dep("operations"),
+        passwordHash: hashPassword(password),
+        active: false,
+        createdAt: new Date(),
       },
-      { upsert: true },
-    );
+    },
+    { upsert: true },
+  );
   const us = await d.collection("users").find().toArray();
   const uid = (email: string) =>
     us.find((u) => u.email === email + "@organic.vn")!._id;

@@ -12,6 +12,8 @@ Khung sidebar/header nằm trong shared layout, giữ nguyên khi chuyển tab. 
 
 Chỉ Admin truy cập các route và API quản trị. Giữ quy tắc Admin cuối cùng và xử lý việc mở trước khi chuyển phòng. Form sửa không đổi mật khẩu; phiên bản này chưa có thao tác đặt lại mật khẩu riêng. Xem [nghiệm thu quản trị CRUD](docs/ADMIN_CRUD.md).
 
+Khi thêm phòng ban, chỉ cần nhập tên. Server tự cấp mã `PB-000001` bằng bộ đếm MongoDB và kiểm tra duy nhất; mã cùng ID giữ nguyên khi đổi tên. Mã phòng hiện có tiếp tục được sử dụng.
+
 ## Nhận diện Organic Việt Nam
 
 Giao diện dùng logo chính thức và hai màu gốc `#006B35` / `#58A500`, với sidebar xanh đậm, nền sáng và hệ thống thẻ/form đồng bộ. Xem [quy chuẩn nhận diện và ảnh giao diện](docs/BRAND_IDENTITY.md), [đăng nhập mới](docs/brand-login-desktop.png) và [giao diện mobile](docs/my-tasks-mobile.png). SVG được lưu local trong `public/brand`; các thành phần dùng chung ở `src/components/brand.tsx` và kiểu thương hiệu ở `src/app/brand.css`.

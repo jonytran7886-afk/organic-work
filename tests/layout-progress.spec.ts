@@ -171,13 +171,11 @@ test("Tiến độ liên phòng, phân công tại dòng, lý do chờ và giữ
     .click();
   const row = ops.locator('[data-task-id="' + id + '"]');
   await expect(row).toBeVisible();
-  const options = await row
-    .getByLabel("Phân công " + title, { exact: true })
-    .locator("option")
-    .allTextContents();
-  expect(options).toContain("Phạm Thanh Hà");
-  expect(options).not.toContain("Tài khoản đã tắt");
-  expect(options).not.toContain("Trần Minh Anh");
+  const assignment = row.getByLabel("Phân công " + title, { exact: true });
+  await expect(assignment).toBeVisible();
+  await expect(assignment).toContainText("Phạm Thanh Hà");
+  await expect(assignment).not.toContainText("Tài khoản đã tắt");
+  await expect(assignment).not.toContainText("Trần Minh Anh");
   await row
     .getByLabel("Phân công " + title, { exact: true })
     .selectOption(employee._id);
