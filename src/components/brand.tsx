@@ -12,7 +12,7 @@ export function OrganicSymbol({ className = "" }: { className?: string }) {
     />
   );
 }
-export function BrandLockup() {
+export function BrandLockup({ compact = false }: { compact?: boolean }) {
   return (
     <Link href="/my-tasks" className="brand" aria-label="Organic Work">
       <span className="brand-symbol-shell">
@@ -20,7 +20,7 @@ export function BrandLockup() {
       </span>
       <span className="brand-wordmark">
         Organic <b>Work</b>
-        <small>KHÔNG GIAN LÀM VIỆC</small>
+        {!compact && <small>KHÔNG GIAN LÀM VIỆC</small>}
       </span>
     </Link>
   );

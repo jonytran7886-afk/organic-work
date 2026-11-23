@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth";
 import AdminRoute from "@/components/admin-route";
+import ProfileRoute from "@/components/profile-route";
 export const runtime = "nodejs";
 export default async function Page({
   params,
@@ -47,5 +48,9 @@ export default async function Page({
       redirect("/admin/" + section + (remaining.size ? "?" + remaining : ""));
     }
   }
-  return segments[0] === "admin" ? <AdminRoute /> : null;
+  return segments[0] === "admin" ? (
+    <AdminRoute />
+  ) : segments.length === 1 && segments[0] === "profile" ? (
+    <ProfileRoute />
+  ) : null;
 }

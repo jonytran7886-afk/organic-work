@@ -8,7 +8,6 @@ import Icon from "./ui-icon";
 type Row = Record<string, any>;
 export default function SideNavigation({
   user,
-  departmentName,
   myCount,
   onLogout,
 }: {
@@ -60,15 +59,6 @@ export default function SideNavigation({
   function content() {
     return (
       <>
-        <div className="workspace-label">
-          <span className="company-logo">
-            <OrganicSymbol />
-          </span>
-          <div>
-            <strong>Organic Việt Nam</strong>
-            <small>{departmentName}</small>
-          </div>
-        </div>
         <section className="nav-group">
           <h2 className="nav-label">Công việc</h2>
           <nav aria-label="Công việc">{work.map((item) => itemLink(item))}</nav>
@@ -103,11 +93,20 @@ export default function SideNavigation({
             </p>
           </div>
           <div className="profile">
-            <span className="avatar">{user.name.slice(0, 1)}</span>
-            <div>
-              <strong>{user.name}</strong>
-              <small>{roleNames[user.role]}</small>
-            </div>
+            <Link
+              href="/profile"
+              className="profile-link"
+              aria-label="Hồ sơ của tôi"
+              aria-current={path === "/profile" ? "page" : undefined}
+              onClick={() => setOpen(false)}
+            >
+              <span className="avatar">{user.name.slice(0, 1)}</span>
+              <div>
+                <strong>{user.name}</strong>
+                <small>{roleNames[user.role]}</small>
+                <small>Hồ sơ của tôi</small>
+              </div>
+            </Link>
             <button
               className="logout"
               title="Đăng xuất"
@@ -148,11 +147,11 @@ export default function SideNavigation({
   return (
     <>
       <aside className="sidebar desktop-sidebar">
-        <BrandLockup />
+        <BrandLockup compact />
         {content()}
       </aside>
       <header className="mobile-app-header">
-        <BrandLockup />
+        <BrandLockup compact />
         <button
           ref={trigger}
           type="button"
@@ -217,7 +216,7 @@ export default function SideNavigation({
       >
         <aside className="sidebar drawer-sidebar">
           <div className="drawer-heading">
-            <BrandLockup />
+            <BrandLockup compact />
             <button
               ref={closeButton}
               className="drawer-close"

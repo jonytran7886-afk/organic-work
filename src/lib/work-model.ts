@@ -4,6 +4,9 @@ export type WorkTask = Record<string, any> & {
   dueDate?: string | null;
   priority: string;
 };
+export function detailHref(taskId: string, from: string) {
+  return "/tasks/" + taskId + "?" + new URLSearchParams({ from });
+}
 export const groupNames: Record<string, string> = {
   late: "Quá hạn",
   today: "Đến hạn hôm nay",
@@ -36,6 +39,20 @@ export function sortWork(a: WorkTask, b: WorkTask) {
     String(a._id).localeCompare(String(b._id))
   );
 }
+export function sortWorkBy(order: string) {
+  const rank: Record<string, number> = {
+    urgent: 4,
+    high: 3,
+    normal: 2,
+    low: 1,
+  };
+  return (a: WorkTask, b: WorkTask) =>
+    (order === "title"
+      ? a.title.localeCompare(b.title, "vi")
+      : order === "priority"
+        ? (rank[b.priority] || 0) - (rank[a.priority] || 0)
+        : 0) || sortWork(a, b);
+}
 export function groupWork(tasks: WorkTask[], day = today()) {
   return Object.keys(groupNames)
     .map((key) => ({
@@ -46,6 +63,7 @@ export function groupWork(tasks: WorkTask[], day = today()) {
     .filter((g) => g.tasks.length);
 }
 export function counts(tasks: WorkTask[]) {
+  tasks = tasks.filter((t) => !(t.activeChildCount > 0));
   const open = tasks.filter((t) => t.status !== "done" && !t.archivedAt);
   return {
     todo: tasks.filter((t) => t.status === "todo").length,
@@ -59,6 +77,7 @@ export function counts(tasks: WorkTask[]) {
   };
 }
 export function metricMatch(t: WorkTask, metric: string) {
+  if (metric === "all") return true;
   if (metric === "late") return overdue(t);
   if (metric === "today")
     return t.status !== "done" && !t.archivedAt && t.dueDate === today();

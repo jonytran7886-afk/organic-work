@@ -2,6 +2,7 @@ import { test, expect, Page } from "@playwright/test";
 import { db, client } from "../src/lib/db";
 import { today } from "../src/lib/model";
 import { addDays } from "../src/lib/work-model";
+import { hashPassword } from "../src/lib/password";
 const password = process.env.DEMO_PASSWORD!;
 async function login(page: Page, email: string, path = "/login") {
   await page.goto(path);
@@ -114,7 +115,7 @@ test("Nhóm việc đúng các mốc ngày, chế độ hoàn thành, tìm kiế
     .click();
   await expect(worker.locator(".work-task")).toHaveCount(7);
   const target = worker.locator('[data-task-id="' + tasks[0]._id + '"]');
-  await target.getByRole("button", { name: "Hoàn thành", exact: true }).click();
+  await target.locator(".inline-task-status").selectOption("done");
   await expect(worker.locator(".work-task")).toHaveCount(6);
   await worker
     .getByRole("button", { name: "Đã hoàn thành", exact: true })
@@ -186,9 +187,9 @@ test("Tiến độ liên phòng, phân công tại dòng, lý do chờ và giữ
     .click();
   await sales.getByRole("button", { name: "Quá hạn", exact: true }).click();
   await expect(sales.locator('[data-task-id="' + id + '"]')).toBeVisible();
-  await expect(sales.locator('[data-task-id="' + id + '"] select')).toHaveCount(
-    0,
-  );
+  await expect(
+    sales.locator('[data-task-id="' + id + '"] .inline-assignment select'),
+  ).toHaveCount(0);
   expect(
     (await write(sales, "tasks/" + id, { assigneeId: employee._id }, "PATCH"))
       .status,
@@ -196,9 +197,7 @@ test("Tiến độ liên phòng, phân công tại dòng, lý do chờ và giữ
   await worker.reload();
   const task = worker.locator('[data-task-id="' + id + '"]');
   await expect(task).toBeVisible();
-  await task
-    .getByRole("button", { name: "Chuyển sang Đang chờ", exact: true })
-    .click();
+  await task.locator(".inline-task-status").selectOption("waiting");
   const dialog = worker.getByRole("dialog");
   await dialog
     .getByLabel("Lý do chờ", { exact: true })
@@ -228,13 +227,24 @@ test("Tiến độ liên phòng, phân công tại dòng, lý do chờ và giữ
       });
     else await route.continue();
   });
-  await task.getByRole("button", { name: "Hoàn thành", exact: true }).click();
+  await task.locator(".inline-task-status").selectOption("done");
+  await worker
+    .getByRole("dialog")
+    .getByLabel("Kết quả thực hiện")
+    .fill("Đóng gói 08:30, 500 kiện, đầu mối Thanh Hà");
+  await worker
+    .getByRole("dialog")
+    .getByRole("button", { name: "Hoàn thành", exact: true })
+    .click();
   await expect(worker.locator(".error").first()).toContainText(
     "Lỗi lưu có kiểm soát",
   );
-  await expect(task.locator(".status")).toHaveText("Đang chờ");
+  await expect(task.locator(".inline-task-status")).toHaveValue("waiting");
   await worker.unroute("**/api/tasks/" + id);
-  await task.getByRole("button", { name: "Hoàn thành", exact: true }).click();
+  await worker
+    .getByRole("dialog")
+    .getByRole("button", { name: "Hoàn thành", exact: true })
+    .click();
   await expect(task).toHaveCount(0);
   await ops.reload();
   await expect(ops.locator(".stat-waiting>strong")).toHaveText("0");
@@ -284,11 +294,31 @@ test("Chặn Tiến độ nhân viên và tham số vượt quyền; link chi ti
     manager = await browser.newPage();
   await login(employee, "nv.vanhanh");
   const peer = await browser.newPage();
-  await login(peer, "nv.vanhanh2");
-  await expect(
-    peer.getByRole("heading", { name: "Bạn chưa có công việc được giao" }),
-  ).toBeVisible();
-  await peer.close();
+  const testDb = await db();
+  const sourceUser = await testDb
+    .collection("users")
+    .findOne({ email: "nv.vanhanh@organic.vn" });
+  const emptyEmail = "empty-progress-" + Date.now();
+  const emptyUser = await testDb.collection("users").insertOne({
+    name: "Nhân viên chưa có việc",
+    email: emptyEmail + "@organic.vn",
+    role: "employee",
+    active: true,
+    departmentId: sourceUser!.departmentId,
+    passwordHash: hashPassword(password),
+  });
+  try {
+    await login(peer, emptyEmail);
+    await expect(
+      peer.getByRole("heading", { name: "Bạn chưa có công việc được giao" }),
+    ).toBeVisible();
+  } finally {
+    await peer.close();
+    await testDb
+      .collection("sessions")
+      .deleteMany({ userId: emptyUser.insertedId });
+    await testDb.collection("users").deleteOne({ _id: emptyUser.insertedId });
+  }
   await expect(
     employee.getByRole("link", { name: "Tiến độ", exact: true }),
   ).toHaveCount(0);

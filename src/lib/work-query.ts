@@ -5,6 +5,7 @@ import {
   counts,
   groupWork,
   sortWork,
+  sortWorkBy,
   metricMatch,
   type WorkTask,
 } from "./work-model";
@@ -12,8 +13,10 @@ export class QueryPermissionError extends Error {
   status = 403;
 }
 const schema = z.object({
+  sort: z.enum(["date", "priority", "title"]).default("date"),
   view: z.enum(["mine", "progress", "board"]).default("board"),
-  scope: z.enum(["owned", "sent", "all", "visible"]).optional(),
+  involvement: z.enum(["assigned", "participating"]).default("assigned"),
+  scope: z.enum(["owned", "sent", "incoming", "all", "visible"]).optional(),
   department: z.string().optional(),
   assignee: z.string().optional(),
   status: z.enum(["", "todo", "doing", "waiting", "done"]).default(""),
@@ -28,6 +31,7 @@ const schema = z.object({
       "late",
       "today",
       "unassigned",
+      "all",
     ])
     .default(""),
   q: z.string().max(250).default(""),
@@ -51,7 +55,7 @@ export async function queryWork(user: any, params: URLSearchParams) {
     throw new QueryPermissionError("Phạm vi Tiến độ không hợp lệ");
   if (user.role !== "admin" && selectedScope === "all")
     throw new QueryPermissionError("Không có quyền xem tất cả phòng ban");
-  if (user.role === "employee" && selectedScope === "sent")
+  if (user.role === "employee" && ["sent", "incoming"].includes(selectedScope))
     throw new QueryPermissionError("Không có quyền xem yêu cầu đã gửi");
   const conditions: any[] = [
     scope(user),
@@ -59,6 +63,11 @@ export async function queryWork(user: any, params: URLSearchParams) {
   ];
   if (selectedScope === "owned")
     conditions.push({ owningDepartmentId: user.departmentId });
+  if (selectedScope === "incoming")
+    conditions.push({
+      owningDepartmentId: user.departmentId,
+      requestingDepartmentId: { $ne: user.departmentId },
+    });
   if (selectedScope === "sent")
     conditions.push({
       requestingDepartmentId: user.departmentId,
@@ -86,7 +95,9 @@ export async function queryWork(user: any, params: URLSearchParams) {
   }
   if (f.view === "mine")
     conditions.push({
-      assigneeId: user._id,
+      ...(f.involvement === "participating"
+        ? { participantIds: user._id }
+        : { assigneeId: user._id }),
       status: f.completed === "1" ? "done" : { $ne: "done" },
     });
   if (f.open === "1") conditions.push({ status: { $ne: "done" } });
@@ -100,11 +111,21 @@ export async function queryWork(user: any, params: URLSearchParams) {
       },
     });
   // Permission and record filters are applied by MongoDB before counts/grouping.
-  const base = (await d
+  const found = (await d
     .collection("tasks")
     .find({ $and: conditions })
     .toArray()) as unknown as WorkTask[];
-  const tasks = base.filter((t) => metricMatch(t, f.metric)).sort(sortWork);
+  const records: WorkTask[] = found.map((task) => ({
+    ...task,
+    participantIds: task.participantIds || [],
+  }));
+  const parents = records
+    .filter((t) => t.activeChildCount > 0 && metricMatch(t, f.metric))
+    .sort(sortWork);
+  const base = records.filter((t) => !(t.activeChildCount > 0));
+  const tasks = base
+    .filter((t) => metricMatch(t, f.metric))
+    .sort(sortWorkBy(f.sort));
   const stats = counts(base);
   const departments = await d.collection("departments").find().toArray();
   const people = await d
@@ -140,20 +161,25 @@ export async function queryWork(user: any, params: URLSearchParams) {
         }));
   return {
     tasks,
+    parents,
     total: tasks.length,
     stats,
-    groups: groupWork(tasks),
+    groups: groupWork(tasks).map((group) => ({
+      ...group,
+      tasks: group.tasks.sort(sortWorkBy(f.sort)),
+    })),
     scope: selectedScope,
     allocation,
     allocationType: byDepartment ? "department" : "person",
     hasAssigned:
-      (await d
-        .collection("tasks")
-        .countDocuments({
-          ...scope(user),
-          assigneeId: user._id,
-          archivedAt: null,
-          status: { $ne: "done" },
-        })) > 0,
+      (await d.collection("tasks").countDocuments({
+        ...scope(user),
+        ...(f.view === "mine" && f.involvement === "participating"
+          ? { participantIds: user._id }
+          : { assigneeId: user._id }),
+        activeChildCount: { $not: { $gt: 0 } },
+        archivedAt: null,
+        status: { $ne: "done" },
+      })) > 0,
   };
 }

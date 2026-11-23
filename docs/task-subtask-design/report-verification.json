@@ -1,0 +1,32 @@
+{
+  "scope": "Offline report QA only, not application E2E",
+  "checkedAt": "2026-11-22T07:42:21.240Z",
+  "results": [
+    {
+      "width": 1440,
+      "height": 1000,
+      "documents": 7,
+      "fields": 28,
+      "permissionActions": 17,
+      "eventGroups": 13,
+      "promptSections": 12,
+      "noPageOverflow": true,
+      "navigation": "pass",
+      "keyboard": "pass",
+      "pageErrors": []
+    },
+    {
+      "width": 390,
+      "height": 1000,
+      "documents": 7,
+      "fields": 28,
+      "permissionActions": 17,
+      "eventGroups": 13,
+      "promptSections": 12,
+      "noPageOverflow": true,
+      "navigation": "pass",
+      "keyboard": "pass",
+      "pageErrors": []
+    }
+  ]
+}

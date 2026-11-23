@@ -49,13 +49,24 @@ test("Giao việc liên phòng, phân quyền, trạng thái, bình luận, lưu
   await modal
     .getByLabel("Tiêu đề công việc")
     .fill("E2E Xác nhận lịch đóng gói lô gà Kỳ Anh " + Date.now());
-  await modal.getByLabel("Phòng phụ trách").selectOption({ label: "Vận hành" });
-  await expect(modal.getByLabel("Người phụ trách")).toBeDisabled();
-  await modal.getByLabel("Hạn hoàn thành").fill("2020-01-01");
+  await modal.getByLabel("Phòng phụ trách").fill("van hanh");
+  await modal.getByRole("option", { name: "Vận hành", exact: true }).click();
+  await expect(modal.getByLabel("Người đảm nhận chính")).toBeDisabled();
+  await modal.getByLabel("Ngày bắt đầu").fill("2019-12-31");
+  await modal.getByLabel("Ngày kết thúc").fill("2020-01-01");
+  await modal.getByLabel("Ưu tiên", { exact: true }).fill("cao");
+  await modal.getByLabel("Ưu tiên", { exact: true }).press("Enter");
+  await expect(modal.getByLabel("Ưu tiên", { exact: true })).toHaveValue("Cao");
   await modal
     .getByRole("button", { name: "Tạo công việc", exact: true })
     .click();
   await expect(sales).toHaveURL(/\/tasks\//);
+  await expect(
+    sales.locator(".meta").filter({ hasText: "Ngày bắt đầu" }),
+  ).toContainText("2019-12-31");
+  await expect(
+    sales.locator(".meta").filter({ hasText: "Ngày kết thúc" }),
+  ).toContainText("2020-01-01");
   const url = sales.url(),
     taskId = new URL(url).pathname.split("/").at(-1)!;
   await ops.goto(url);
@@ -95,6 +106,14 @@ test("Giao việc liên phòng, phân quyền, trạng thái, bình luận, lưu
     worker.getByText("Xác nhận đóng gói lúc 08:30.", { exact: true }),
   ).toBeVisible();
   await worker.getByLabel("Trạng thái công việc").selectOption("done");
+  await worker
+    .getByRole("dialog")
+    .getByLabel("Kết quả thực hiện")
+    .fill("Đóng gói 08:30, 500 kiện, đầu mối Thanh Hà");
+  await worker
+    .getByRole("dialog")
+    .getByRole("button", { name: "Hoàn thành", exact: true })
+    .click();
   await expect(
     worker.getByText("Hoàn thành lúc", { exact: true }),
   ).toBeVisible();
@@ -217,7 +236,7 @@ test("Admin tạo phòng và tài khoản; vô hiệu hóa thu hồi phiên", as
   await login(n, "e2e" + suffix);
   await expect(
     n.getByRole("button", { name: "Tạo công việc", exact: true }),
-  ).toHaveCount(0);
+  ).toBeVisible();
   await a
     .getByRole("button", {
       name: "Thao tác Nhân viên E2E " + suffix,

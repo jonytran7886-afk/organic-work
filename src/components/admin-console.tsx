@@ -4,16 +4,22 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Dialog from "./dialog";
 import { roleNames } from "@/lib/model";
+import { useWorkspace } from "./workspace-context";
+import {
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_MAX_LENGTH,
+} from "@/lib/password-policy";
 type Row = Record<string, any>;
 type Editor = {
   kind: "user" | "department";
-  mode: "create" | "edit" | "view" | "toggle";
+  mode: "create" | "edit" | "view" | "toggle" | "reset";
   record: Row;
 };
 type Draft = {
   name: string;
   email: string;
   password: string;
+  confirmPassword: string;
   departmentId: string;
   role: string;
   active: boolean;
@@ -23,6 +29,7 @@ function initial(record: Row, departmentId = ""): Draft {
     name: record.name || "",
     email: record.email || "",
     password: "",
+    confirmPassword: "",
     departmentId: record.departmentId || departmentId,
     role: record.role || "employee",
     active: record.active ?? true,
@@ -37,6 +44,7 @@ export default function AdminConsole({
   departments: Row[];
   onSaved: () => Promise<void>;
 }) {
+  const { data, expire } = useWorkspace();
   const path = usePathname(),
     params = useSearchParams(),
     router = useRouter();
@@ -73,7 +81,7 @@ export default function AdminConsole({
   });
   const dirty =
     editor &&
-    ["create", "edit"].includes(editor.mode) &&
+    ["create", "edit", "reset"].includes(editor.mode) &&
     JSON.stringify(draft) !== baseline;
   function filter(values: Record<string, string>) {
     const q = new URLSearchParams(window.location.search);
@@ -133,33 +141,40 @@ export default function AdminConsole({
     const scroll = window.scrollY;
     try {
       const value =
-        editor.mode === "toggle"
+        editor.mode === "reset"
           ? {
-              kind: "user",
+              kind: "reset-password",
               _id: editor.record._id,
-              name: editor.record.name,
-              email: editor.record.email,
-              departmentId: editor.record.departmentId,
-              role: editor.record.role,
-              active: !editor.record.active,
+              password: draft.password,
+              confirmPassword: draft.confirmPassword,
             }
-          : editor.kind === "department"
+          : editor.mode === "toggle"
             ? {
-                kind: "department",
-                name: draft.name,
-                ...(editor.mode === "edit" ? { _id: editor.record._id } : {}),
-              }
-            : {
                 kind: "user",
-                name: draft.name,
-                email: draft.email,
-                departmentId: draft.departmentId,
-                role: draft.role,
-                active: draft.active,
-                ...(editor.mode === "create"
-                  ? { password: draft.password }
-                  : { _id: editor.record._id }),
-              };
+                _id: editor.record._id,
+                name: editor.record.name,
+                email: editor.record.email,
+                departmentId: editor.record.departmentId,
+                role: editor.record.role,
+                active: !editor.record.active,
+              }
+            : editor.kind === "department"
+              ? {
+                  kind: "department",
+                  name: draft.name,
+                  ...(editor.mode === "edit" ? { _id: editor.record._id } : {}),
+                }
+              : {
+                  kind: "user",
+                  name: draft.name,
+                  email: draft.email,
+                  departmentId: draft.departmentId,
+                  role: draft.role,
+                  active: draft.active,
+                  ...(editor.mode === "create"
+                    ? { password: draft.password }
+                    : { _id: editor.record._id }),
+                };
       const response = await fetch("/api/admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -169,6 +184,13 @@ export default function AdminConsole({
       if (!response.ok) {
         setFields(result.fields || {});
         throw new Error(result.error || "Không thể lưu dữ liệu");
+      }
+      if (editor.mode === "reset" && editor.record._id === data.user._id) {
+        setDraft(initial({}));
+        setEditor(null);
+        expire();
+        router.replace("/login?passwordReset=success");
+        return;
       }
       // Fetch the server-confirmed list before closing, keeping the current route and filters.
       const listResponse = await fetch("/api/admin");
@@ -195,15 +217,17 @@ export default function AdminConsole({
             (!params.get("active") ||
               saved.active === (params.get("active") === "active"))));
       const message =
-        editor.mode === "toggle"
-          ? editor.record.active
-            ? "Đã vô hiệu hóa tài khoản"
-            : "Đã kích hoạt lại tài khoản"
-          : editor.mode === "create"
-            ? editor.kind === "user"
-              ? "Đã tạo tài khoản"
-              : "Đã tạo phòng ban"
-            : "Đã lưu thay đổi";
+        editor.mode === "reset"
+          ? "Đã đặt lại mật khẩu và thu hồi các phiên đăng nhập"
+          : editor.mode === "toggle"
+            ? editor.record.active
+              ? "Đã vô hiệu hóa tài khoản"
+              : "Đã kích hoạt lại tài khoản"
+            : editor.mode === "create"
+              ? editor.kind === "user"
+                ? "Đã tạo tài khoản"
+                : "Đã tạo phòng ban"
+              : "Đã lưu thay đổi";
       await onSaved();
       setNotice(
         message +
@@ -231,6 +255,7 @@ export default function AdminConsole({
           : "Kích hoạt lại tài khoản"
         : (
             {
+              reset: "Đặt lại mật khẩu",
               create:
                 editor.kind === "user" ? "Thêm tài khoản" : "Thêm phòng ban",
               edit:
@@ -477,6 +502,7 @@ export default function AdminConsole({
                         ["edit", "Chỉnh sửa"],
                         ...(kind === "user"
                           ? [
+                              ["reset", "Đặt lại mật khẩu"],
                               [
                                 "toggle",
                                 row.active ? "Vô hiệu hóa" : "Kích hoạt lại",
@@ -597,7 +623,9 @@ export default function AdminConsole({
                         ? editor.kind === "user"
                           ? "Tạo tài khoản"
                           : "Tạo phòng ban"
-                        : "Lưu thay đổi"}
+                        : editor.mode === "reset"
+                          ? "Đặt lại mật khẩu"
+                          : "Lưu thay đổi"}
                 </button>
               </>
             )
@@ -636,6 +664,58 @@ export default function AdminConsole({
                 <code>{editor.record._id}</code>
               </dd>
             </dl>
+          ) : editor.mode === "reset" ? (
+            <form
+              id="crud-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                submit();
+              }}
+            >
+              <p>
+                Đặt lại mật khẩu cho <strong>{editor.record.name}</strong> (
+                {editor.record.email}). Các phiên đăng nhập hiện tại sẽ bị thu
+                hồi. Nhân viên cần dùng mật khẩu mới để đăng nhập lại.
+              </p>
+              {error && (
+                <div role="alert" className="error">
+                  {error}
+                </div>
+              )}
+              {field(
+                "Mật khẩu mới",
+                "password",
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  minLength={PASSWORD_MIN_LENGTH}
+                  maxLength={PASSWORD_MAX_LENGTH}
+                  value={draft.password}
+                  onChange={(e) => update("password", e.target.value)}
+                  {...inputProps("password")}
+                  aria-label="Mật khẩu mới"
+                />,
+              )}
+              <p className="hint">
+                Mật khẩu từ {PASSWORD_MIN_LENGTH} đến {PASSWORD_MAX_LENGTH} ký
+                tự.
+              </p>
+              {field(
+                "Xác nhận mật khẩu mới",
+                "confirmPassword",
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  maxLength={200}
+                  value={draft.confirmPassword}
+                  onChange={(e) => update("confirmPassword", e.target.value)}
+                  {...inputProps("confirmPassword")}
+                  aria-label="Xác nhận mật khẩu mới"
+                />,
+              )}
+            </form>
           ) : editor.mode === "toggle" ? (
             <>
               <p id="crud-confirm-message">
@@ -700,8 +780,8 @@ export default function AdminConsole({
                         name="password"
                         type="password"
                         autoComplete="new-password"
-                        minLength={10}
-                        maxLength={200}
+                        minLength={PASSWORD_MIN_LENGTH}
+                        maxLength={PASSWORD_MAX_LENGTH}
                         required
                         value={draft.password}
                         onChange={(e) => update("password", e.target.value)}

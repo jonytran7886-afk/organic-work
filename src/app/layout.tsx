@@ -4,6 +4,11 @@ import "./globals.css";
 import "./brand.css";
 import "./admin.css";
 import "./navigation.css";
+import "./task-features.css";
+import "./profile.css";
+import "./subtasks.css";
+import "./my-tasks.css";
+import "./task-detail.css";
 export const metadata = {
   title: "Organic Work — Không gian làm việc",
   description:

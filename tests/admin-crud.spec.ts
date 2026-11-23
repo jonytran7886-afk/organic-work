@@ -1,5 +1,9 @@
 import { navTo } from "./helpers/navigation";
 import { test, expect, Page } from "@playwright/test";
+import { db, client, id } from "../src/lib/db";
+test.afterAll(async () => {
+  await client().close();
+});
 const password = process.env.DEMO_PASSWORD!;
 async function login(p: Page, email = "admin") {
   await p.goto("/login");
@@ -23,6 +27,123 @@ async function createUser(p: Page, name: string, email: string) {
   await d.getByRole("button", { name: "Tạo tài khoản", exact: true }).click();
   await expect(d).toHaveCount(0);
 }
+
+test("Admin đặt lại mật khẩu, thu hồi phiên và đăng nhập bằng mật khẩu mới", async ({
+  page,
+  browser,
+}) => {
+  await login(page);
+  await page.goto("/admin/users");
+  const stamp = Date.now();
+  const name = `Reset employee ${stamp}`;
+  const email = `reset-${stamp}@organic.vn`;
+  await createUser(page, name, email);
+  const context = await browser.newContext();
+  try {
+    const employee = await context.newPage();
+    await employee.goto("/login");
+    await employee.getByLabel("Email", { exact: true }).fill(email);
+    await employee.getByLabel("Mật khẩu", { exact: true }).fill(password);
+    await employee
+      .getByRole("button", { name: "Đăng nhập", exact: true })
+      .click();
+    await expect(employee).toHaveURL(/\/my-tasks$/);
+    const data = await (await page.request.get("/api/admin")).json();
+    const target = data.users.find((u: any) => u.email === email);
+    const forbidden = await employee.request.post("/api/admin", {
+      data: {
+        kind: "reset-password",
+        _id: target._id,
+        password: "123456",
+        confirmPassword: "123456",
+      },
+    });
+    expect(forbidden.status()).toBe(403);
+    await menu(page, name, "Đặt lại mật khẩu");
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Mật khẩu mới", { exact: true }).fill("123456");
+    await dialog
+      .getByLabel("Xác nhận mật khẩu mới", { exact: true })
+      .fill("MismatchPassword123!");
+    await dialog
+      .getByRole("button", { name: "Đặt lại mật khẩu", exact: true })
+      .click();
+    await expect(dialog.getByRole("alert")).toContainText("không khớp");
+    await dialog
+      .getByLabel("Xác nhận mật khẩu mới", { exact: true })
+      .fill("123456");
+    await dialog
+      .getByRole("button", { name: "Đặt lại mật khẩu", exact: true })
+      .click();
+    await expect(dialog).toHaveCount(0);
+    expect((await employee.request.get("/api/admin")).status()).toBe(401);
+    await employee.goto("/login");
+    await employee.getByLabel("Email", { exact: true }).fill(email);
+    await employee.getByLabel("Mật khẩu", { exact: true }).fill(password);
+    await employee
+      .getByRole("button", { name: "Đăng nhập", exact: true })
+      .click();
+    await expect(employee.getByRole("alert")).toBeVisible();
+    await employee.getByLabel("Mật khẩu", { exact: true }).fill("123456");
+    await employee
+      .getByRole("button", { name: "Đăng nhập", exact: true })
+      .click();
+    await expect(employee).toHaveURL(/\/my-tasks$/);
+  } finally {
+    await context.close();
+  }
+});
+test("Admin tự đặt lại mật khẩu được chuyển tới đăng nhập và dùng mật khẩu mới", async ({
+  page,
+}) => {
+  await login(page);
+  const name = `Self reset ${Date.now()}`;
+  const email = `self-reset-${Date.now()}@organic.vn`;
+  const directory = await (await page.request.get("/api/admin")).json();
+  const created = await page.request.post("/api/admin", {
+    headers: { Origin: new URL(page.url()).origin },
+    data: {
+      kind: "user",
+      name,
+      email,
+      role: "admin",
+      active: true,
+      departmentId: directory.departments[0]._id,
+      password,
+    },
+  });
+  expect(created.ok()).toBe(true);
+  const createdId = (await created.json()).id;
+  try {
+    await page.request.post("/api/logout", {
+      headers: { Origin: new URL(page.url()).origin },
+    });
+    await login(page, email.split("@")[0]);
+    await page.goto("/admin/users");
+    await menu(page, name, "Đặt lại mật khẩu");
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Mật khẩu mới", { exact: true }).fill("654321");
+    await dialog
+      .getByLabel("Xác nhận mật khẩu mới", { exact: true })
+      .fill("654321");
+    await dialog
+      .getByRole("button", { name: "Đặt lại mật khẩu", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/login\?passwordReset=success$/);
+    await expect(page.getByRole("status")).toContainText("Đã đặt lại mật khẩu");
+    await expect(dialog).toHaveCount(0);
+    expect((await page.request.get("/api/admin")).status()).toBe(401);
+    await page.getByLabel("Email", { exact: true }).fill(email);
+    await page.getByLabel("Mật khẩu", { exact: true }).fill("654321");
+    await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
+    await expect(page).toHaveURL(/\/my-tasks$/);
+  } finally {
+    const d = await db();
+    await d.collection("sessions").deleteMany({ userId: id(createdId) });
+    await d.collection("users").deleteOne({ _id: id(createdId) });
+  }
+});
+
 test("Route riêng, lịch sử trình duyệt, dialog tạo, lỗi email trùng, xem và sửa đúng tài khoản", async ({
   page,
 }) => {

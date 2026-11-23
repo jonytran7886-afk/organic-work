@@ -1,6 +1,10 @@
 .nav-group {
   margin-top: 25px;
 }
+.sidebar > .brand + .nav-group,
+.sidebar > .drawer-heading + .nav-group {
+  margin-top: 20px;
+}
 .nav-group .nav-label {
   font-size: 12px;
   letter-spacing: 0.7px;

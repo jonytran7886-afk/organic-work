@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Đề xuất CTA My Tasks và quyền tạo Subtask ADIGO</title>
+  <style>
+    :root{color-scheme:light;font-family:system-ui,sans-serif;--ink:#18352b;--muted:#52645d;--line:#d9e4dd;--green:#006d35;--soft:#f3f7f4}
+    *{box-sizing:border-box}body{margin:0;background:#fff;color:var(--ink);line-height:1.65;overflow-wrap:anywhere}main{max-width:1180px;margin:auto;padding:28px}h1{font-size:26px;line-height:1.3}h2{font-size:21px;margin:32px 0 12px}h3{font-size:17px}a{color:var(--green);text-underline-offset:3px}p,li{max-width:100%}li{margin:6px 0}.meta{color:var(--muted);font-size:14px}.note{background:var(--soft);padding:16px 20px;border-left:3px solid var(--green);margin:20px 0}.table-wrap{overflow-x:auto;max-width:100%}table{width:100%;border-collapse:collapse;font-size:14px}caption{text-align:left;font-weight:600;padding:10px 0}th,td{padding:12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line);min-width:145px}code{font-size:.92em;overflow-wrap:anywhere}section[id]{scroll-margin-top:20px}.row-demo{border:1px solid var(--line);border-radius:8px;margin:12px 0;padding:16px;display:flex;gap:14px;align-items:center}.row-title{flex:1;min-width:0}.row-meta{color:var(--muted);font-size:13px;margin-top:5px}.demo-actions{display:flex;gap:8px;align-items:center}.demo-button,.expand{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:8px 14px;border:1px solid var(--line);border-radius:6px;white-space:nowrap}.demo-button.primary{background:var(--green);color:white;border-color:var(--green)}.expand{padding:8px;min-width:44px}.mock-label{font-size:13px;color:var(--muted)}.child-demo{margin-left:28px;padding-left:18px;border-left:2px solid var(--line)}.columns{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:24px}nav a{display:inline-block;margin:4px 14px 4px 0}details{padding:12px 0;border-bottom:1px solid var(--line)}summary{cursor:pointer;font-weight:600;min-height:44px;display:list-item}a:focus-visible,summary:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--green);outline-offset:3px}.test-list li{margin-bottom:10px}@media(max-width:680px){main{padding:16px}h1{font-size:23px}.row-demo{flex-wrap:wrap;gap:8px;padding:12px}.row-title{flex-basis:calc(100% - 60px)}.demo-actions{margin-left:auto}.child-demo{margin-left:14px;padding-left:10px}.columns{grid-template-columns:1fr}}@media print{main{padding:0}body{font-size:10pt}.table-wrap{overflow:visible}th,td{min-width:0;padding:7px}tr{break-inside:avoid}.demo-button.primary{background:white;color:var(--ink)}section{break-before:auto}}
+  </style>
+</head>
+<body><main id="top">
+  <header>
+    <p class="meta">23/11/2026 · Asia/Saigon · Phân tích và đề xuất, chờ duyệt trước coding</p>
+    <h1>CTA My Tasks và quyền tạo Subtask ADIGO</h1>
+    <p>Mỗi dòng tối đa một hành động chính, một menu và điều khiển mở cây khi cần. Bổ sung quyền chia nhỏ công việc của nhân viên bằng capability riêng, giữ quyền quản lý cha và quy tắc hoàn thành hiện tại.</p>
+  </header>
+  <div class="note"><strong>Phạm vi phê duyệt</strong><p>Chỉ xử lý CTA, menu, xem con tại chỗ và quyền tạo con. Không xây lại Task module; không tự triển khai multi-assignee, rich text, ngày tùy chọn, completion modes hay các đề xuất Create Task đang chờ duyệt. Không sửa code ứng dụng, API hoặc database trong đợt lập báo cáo này.</p></div>
+  <nav aria-label="Nội dung báo cáo"><a href="#audit">1. Hiện trạng</a><a href="#cta">2. CTA</a><a href="#row">3. Task Row</a><a href="#menu">4. Context Menu</a><a href="#flow">5. Luồng tạo con</a><a href="#permission">6. Nguyên nhân và quyền</a><a href="#technical">7. Kỹ thuật</a><a href="#plan">8. Kế hoạch và nghiệm thu</a></nav>
+
+  <section id="audit">
+    <h2>1. Hiện trạng đã xác minh trong source</h2>
+    <ul>
+      <li><code>work-views.tsx:575–692</code>: renderTask có menu và các nút riêng. Todo hiện Bắt đầu + Chuyển sang Đang chờ + Hoàn thành; doing có Chờ + Hoàn thành; waiting có Bắt đầu + Hoàn thành. Nút done nổi bật cả trước khi bắt đầu.</li>
+      <li><code>task-row-menu.tsx</code>: menu hiện chỉ Mở chi tiết, thêm con và giao lại theo quyền; chưa gộp trạng thái, mở lại hoặc archive. Chưa có roving focus, Arrow/Home/End hay đóng menu toàn cục theo pattern menu.</li>
+      <li><code>model.ts:46</code>: canManage chỉ Admin hoặc manager phòng phụ trách. <code>service.ts:117</code> dùng canManage khi tạo con; TaskHierarchy cũng dùng quyền này để hiện nút. Creator/assignee employee không thỏa điều kiện dù được tạo task gốc và đổi status task được giao.</li>
+      <li><code>task-hierarchy.tsx:10</code>: cha có con được tách sang Công việc cha theo dõi. <code>work-query.ts</code> loại cha tổng hợp khỏi đầu việc, chưa có mở cây tại từng dòng My Tasks. Tạo con đầu tiên có thể làm dòng cha rời danh sách đầu việc chính; phải giữ context/scroll và giải thích, không coi là mất task.</li>
+      <li><code>workspace.tsx:354</code>: patch đã mở dialog lý do chờ và bàn giao kết quả liên phòng. actionLock chặn gửi trùng từ UI, requestId tạo task có dedup server. Dùng lại các luồng này, không PATCH thẳng bỏ qua dialog.</li>
+      <li>Root task và subtask hiện dùng chung CreateTask theo prop parent. Tách điểm mở thành hai dialog để root modal không có parent picker hoặc thao tác tạo con, nhưng vẫn dùng schema/API domain chung.</li>
+      <li>Chỉ có assigneeId đơn và participantIds. Không có multi-assignee thật, không có cấu hình workflow động: dùng nguồn statuses/statusNames và guards server hiện tại.</li>
+    </ul>
+    <p>Không có ảnh mới kèm prompt này. Đã xem ảnh lưu trong repo <a href="my-tasks-desktop.png">desktop</a> và <a href="my-tasks-mobile.png">mobile</a>, có nội dung ngày 20/11/2026; dùng làm tham chiếu bố cục, không coi là ảnh runtime ngày 23/11. Các kết luận hiện trạng mới lấy từ source; chưa có test ứng dụng mới trong đợt báo cáo.</p>
+    <h3>ClickUp và phạm vi áp dụng</h3>
+    <p>Tài liệu ClickUp mô tả tạo con ngay từ List/Board, mở rộng/thu gọn hoặc hiển thị con riêng; List cho chỉnh một số thuộc tính tại chỗ. Multi-assignee là ClickApp cần bật. Đây là hành vi theo tài liệu, chưa được thao tác bằng phiên ClickUp đăng nhập. Bảng CTA và quyền employee trong báo cáo này là thiết kế riêng ADIGO, không phải quy tắc mặc định của ClickUp.</p>
+    <p>Nguồn: <a href="https://help.clickup.com/hc/en-us/articles/6310382044567-Create-and-edit-subtasks-in-List-and-Board-view">List/Board subtasks</a> · <a href="https://help.clickup.com/hc/en-us/articles/6310260883351-Intro-to-List-view">List và inline editing</a> · <a href="https://help.clickup.com/hc/en-us/articles/6309225399703-Intro-to-permissions">Permissions</a> · <a href="https://help.clickup.com/hc/en-us/articles/6309029762583-Multiple-Assignees">Multiple Assignees</a> · <a href="https://developer.clickup.com/reference/createtask">Create Task API</a>.</p>
+    <p class="meta">Nguồn List/Board và Intro to subtasks của ClickUp mô tả khác nhau về guest Edit có được tạo con; không suy quyền employee ADIGO từ quyền guest ClickUp. API parent xác nhận quan hệ dữ liệu thật, không có nghĩa mọi assignee được phép chia nhỏ.</p>
+  </section>
+
+  <section id="cta">
+    <h2>2. CTA theo trạng thái và loại công việc</h2>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Bảng CTA theo trạng thái">
+      <table><caption>Áp dụng cho task độc lập hoặc subtask lá, active và canStatus</caption><thead><tr><th scope="col">Status hiện tại</th><th scope="col">CTA duy nhất</th><th scope="col">Trạng thái trong menu</th><th scope="col">Guard</th></tr></thead><tbody>
+        <tr><th scope="row">todo · Cần làm</th><td>Bắt đầu → doing</td><td>Hoàn thành; Chuyển sang Đang chờ</td><td>Todo→done vẫn được backend cho phép; chỉ chuyển vào menu, không xóa khả năng này.</td></tr>
+        <tr><th scope="row">doing · Đang làm</th><td>Hoàn thành</td><td>Chuyển sang Đang chờ; Đưa về Cần làm</td><td>Liên phòng mở dialog kết quả; waiting bắt buộc lý do. Không lặp CTA chính trong menu.</td></tr>
+        <tr><th scope="row">waiting · Đang chờ</th><td>Tiếp tục → doing</td><td>Hoàn thành; Đưa về Cần làm</td><td>Đổi nhãn Bắt đầu thành Tiếp tục, giữ mutation doing hiện tại và lịch sử lý do chờ.</td></tr>
+        <tr><th scope="row">done · Hoàn thành</th><td>Không có</td><td>Mở lại → todo; Xem lịch sử</td><td>Mở lại theo quyền canStatus của task lá, không giả định chỉ manager được mở.</td></tr>
+        <tr><th scope="row">Archived</th><td>Không có</td><td>Xem chi tiết; Xem lịch sử; Khôi phục nếu canManage</td><td>Không thêm con, không đổi trạng thái, không phân công khi archive.</td></tr>
+        <tr><th scope="row">Không có canStatus</th><td>Không có</td><td>Chỉ thao tác được phép khác như xem hoặc thêm con theo capability riêng</td><td>Quyền tạo con không suy ra quyền đổi trạng thái cha.</td></tr>
+      </tbody></table>
+    </div>
+    <h3>Ngoại lệ bắt buộc cho cha có con hoạt động</h3>
+    <ul>
+      <li>Không dùng bảng task lá để hiện Bắt đầu/Chờ/Hoàn thành trên cha có status được tính tự động. Còn con mở: không có CTA đổi status cha; có thể mở cây bằng điều khiển cạnh tên.</li>
+      <li>Tất cả con done và có reviewer: duy nhất reviewer được chỉ định hoặc Admin có CTA Xác nhận hoàn thành; giữ yêu cầu kết quả liên phòng. Người khác chỉ thấy nhãn Đủ điều kiện nghiệm thu.</li>
+      <li>Cha done muốn thêm con: người canManage có menu Mở lại để thêm việc con. Employee có quyền tạo con không tự được mở lại cha tổng hợp; không hiện thao tác tạo bất khả thi khi cha chưa được người có quyền mở lại.</li>
+      <li>Không thêm reviewer/mode mới. Cha không reviewer hiện tự done khi mọi con xong; giữ nguyên trong phạm vi CTA. Yêu cầu “con hoàn thành không mặc nhiên đóng cha” khác hành vi này: nếu muốn đổi mặc định cần phê duyệt riêng về completion, không gói ngầm trong UI.</li>
+    </ul>
+  </section>
+
+  <section id="row">
+    <h2>3. Task Row mới</h2>
+    <p>Trái: nút mở cây khi có con → title link → status/deadline/priority → x/y hoàn thành. Phải: CTA chính nếu hợp lệ + menu. Giữ filter/group và nội dung trang hiện có; không thiết kế lại dashboard/sidebar.</p>
+    <p class="mock-label">Minh họa bố cục đề xuất, không phải task thật hoặc giao diện đã triển khai. Các nhãn nút bên dưới chỉ là mẫu.</p>
+    <div class="row-demo" aria-label="Minh họa task todo"><span class="expand" aria-hidden="true">›</span><div class="row-title"><strong>Kiểm tra vật tư ca sáng</strong><div class="row-meta">Cần làm · Hạn 24/11/2026 · Khẩn</div></div><div class="demo-actions"><span class="demo-button primary">Bắt đầu</span><span class="demo-button" aria-hidden="true">⋯</span></div></div>
+    <div class="row-demo" aria-label="Minh họa cha tổng hợp"><span class="expand" aria-hidden="true">⌄</span><div class="row-title"><strong>Chuẩn bị đợt kiểm tra</strong><div class="row-meta">Đang làm · 1/2 con hoàn thành · Tiến độ tổng hợp</div></div><div class="demo-actions"><span class="demo-button" aria-hidden="true">⋯</span></div></div>
+    <div class="child-demo"><div class="row-demo"><div class="row-title"><strong>Kiểm kê vật tư</strong><div class="row-meta">Công việc con · Đang làm · Lê Minh · Hạn 24/11/2026</div></div><div class="demo-actions"><span class="demo-button primary">Hoàn thành</span><span class="demo-button" aria-hidden="true">⋯</span></div></div></div>
+    <ul>
+      <li>Expand control là button aria-expanded/aria-controls, có tooltip/label “Mở công việc con của …”. Không có con thì không dựng vùng trống; thêm con đầu tiên từ menu.</li>
+      <li>Mặc định giữ My Tasks theo đầu việc được giao. Cha tổng hợp nằm trong nhóm theo dõi hiện có nhưng có thể mở con tại chỗ; không tự chuyển toàn My Tasks sang cây và che task con được giao khi cha không thuộc mình.</li>
+      <li>Nếu con đã hiển thị trong danh sách chính, vùng cây là context có nhãn rõ và không cộng thêm vào tổng; tránh hai hàng thao tác cùng ID trong cùng vùng. Không dùng cha context để giả task đã được giao cho người dùng.</li>
+      <li>Expand lấy con lazy, 25 bản ghi/lần, tải thêm tối đa 100/request; cache theo parent + user/scope + filter. Detail là nơi xem toàn bộ con trong phạm vi quyền; không tải từng task detail để dựng cây.</li>
+      <li>Desktop căn CTA phải, cố định không gian thao tác nên hover không đổi chiều cao. Tablet giảm metadata phụ; mobile title/status/hạn trước, CTA/menu dễ chạm, không overflow ngang.</li>
+    </ul>
+  </section>
+
+  <section id="menu">
+    <h2>4. Context Menu theo khả năng thực tế</h2>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Menu và điều kiện quyền"><table><caption>Không render thao tác backend chưa hỗ trợ</caption><thead><tr><th scope="col">Nhóm</th><th scope="col">Hành động</th><th scope="col">Điều kiện</th></tr></thead><tbody>
+      <tr><th scope="row">Công việc</th><td>Mở chi tiết; Chỉnh sửa; Thêm công việc con; Xem lịch sử</td><td>Xem: canView. Sửa: canManage, active; mở form sửa có sẵn trong Detail. Thêm con: capability riêng. Lịch sử mở Detail với anchor sau khi thêm id chuẩn, không tạo API giả.</td></tr>
+      <tr><th scope="row">Phân công</th><td>Phân công hoặc Giao lại</td><td>canManage, active, chưa done; dùng dialog hiện có. Chỉ có một nhãn phù hợp trạng thái phân công.</td></tr>
+      <tr><th scope="row">Giao cho tôi</th><td>Chỉ hiện khi được tự nhận</td><td>Trong phạm vi hiện tại: manager/Admin có quyền phân công, active, cùng phòng nhận, không done. Không tự cấp employee quyền đổi assignee task có sẵn vì đã được tạo con.</td></tr>
+      <tr><th scope="row">Trạng thái</th><td>Các hành động phụ trong bảng CTA</td><td>Domain policy chung quyết định, không có action trùng CTA chính; waiting/review/handover giữ dialog riêng.</td></tr>
+      <tr><th scope="row">Quản trị</th><td>Lưu trữ hoặc Khôi phục</td><td>canManage; có confirm cho thao tác nhạy cảm và preview tác động cha như hiện tại; cha còn con hoạt động bị chặn backend.</td></tr>
+      <tr><th scope="row">Chưa hỗ trợ</th><td>Không hiện Sao chép/Xóa</td><td>Repo chưa có endpoint task duplicate/delete. Không thêm các chức năng này trong phạm vi CTA.</td></tr>
+    </tbody></table></div>
+    <p>Menu có separator theo nhóm có nội dung, icon dùng UiIcon hiện có, nhãn đầy đủ. Button trigger aria-haspopup/menu và title; ArrowUp/Down, Home/End, Enter/Space, Escape; click ngoài đóng và trả focus. Popover dùng portal/fixed với collision/scroll positioning, không bị cắt bởi container; đóng khi route/permission thay đổi. Không gắn role=menu nếu chưa thực hiện đầy đủ keyboard pattern.</p>
+    <p>Ghi dữ liệu qua action dùng chung; chỉ cập nhật sau API thành công, không optimistic đổi status. Busy khóa hành động trong lúc gửi và chặn double-click; lỗi giữ trạng thái cũ, alert đủ rõ; hoàn thành hoặc mở dialog trả focus hợp lý. RequestId mutation dùng lại khi retry cùng thao tác; thao tác mới dùng UUID mới.</p>
+  </section>
+
+  <section id="flow">
+    <h2>5. Luồng tạo Subtask</h2>
+    <ol>
+      <li>Từ menu task đã tồn tại ở My Tasks/List/Board hoặc nút trong Task Detail, kiểm capability hiện hành rồi mở CreateSubtaskDialog riêng.</li>
+      <li>Hiển thị tên cha chỉ đọc; owning/requesting department do server lấy từ cha. Không cho chọn cha khác trong dialog này.</li>
+      <li>Form gọn: title, assignee theo quyền, status mặc định Cần làm, dueDate, priority. Repo hiện bắt buộc dueDate và chỉ tạo todo, nên giữ các quy tắc này; không có select status giả hoặc tùy chọn nhiều người chưa được backend hỗ trợ. Description/startDate/files nằm trong “Thêm chi tiết”.</li>
+      <li>Employee được chia nhỏ cha chỉ tự giao cho mình hoặc để chưa phân công. Giao người khác cần quyền phân công riêng của manager/Admin; UI và server cùng chặn. Không tự cấp quyền participants khi có subtask-create.</li>
+      <li>POST /api/tasks với parentTaskId, requestId và payload đã validate. Transaction hiện có khóa cha, xác minh lại quyền/phòng/active/status/depth, lưu con/file/activity/notification rồi recomputeParent.</li>
+      <li>Thành công: invalidate work/detail/children caches liên quan, cập nhật x/y và nhóm theo dõi, giữ filter/scroll, mở nhánh cha nếu đang xem. Con giao cho người khác xuất hiện trong My Tasks người đó sau refresh/refetch, không tự xuất hiện trong Tôi đảm nhận của creator.</li>
+      <li>Parent done/archive hoặc quyền bị thu hồi sau khi dialog mở: server từ chối, giữ draft và hướng dẫn; không tự reopen parent. Không có nested subtask dưới subtask vì repo giới hạn một cấp.</li>
+    </ol>
+    <p>Không triển khai rich text, ngày optional hoặc multiple assignees từ kế hoạch Create Task trước khi được duyệt. Khi capability multi thực sự được bật về sau, subtask picker đọc cùng capability và query membership helpers; không coi participants là co-assignees.</p>
+  </section>
+
+  <section id="permission">
+    <h2>6. Nguyên nhân và quyền tạo con đề xuất</h2>
+    <p><strong>Nguyên nhân đã tìm thấy:</strong> ba lớp đều đồng nhất tạo con với quản lý toàn bộ cha: TaskRowMenu → canManage; TaskHierarchy → canManage; createTask(parentTaskId) → canManage. Nhân viên tự tạo/nhận task không trở thành manager nên UI ẩn đúng rule hiện hành và gọi API trực tiếp cũng bị chặn. Chỉ hiện nút ở frontend không giải quyết được.</p>
+    <p><code>task.subtask.create</code> là capability domain mới, có helper chung ở server/client. Đề xuất mặc định: user active + canView cha + cha root chưa archive/done + (Admin/manager phòng nhận, hoặc employee cùng phòng nhận là createdById hay assigneeId của cha). Không thay canManage, không làm creator có quyền sửa toàn task hoặc giao người khác.</p>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Bảng quyền tạo subtask"><table><caption>Đề xuất mới cần duyệt, chưa được bật trong repo</caption><thead><tr><th scope="col">Người dùng</th><th scope="col">Tạo con</th><th scope="col">Phân công con</th><th scope="col">Quản lý cha</th></tr></thead><tbody>
+      <tr><th scope="row">Admin / manager phòng phụ trách</th><td>Có, theo điều kiện cha</td><td>Nhân sự active phòng nhận hoặc chưa phân công</td><td>Giữ canManage hiện tại</td></tr>
+      <tr><th scope="row">Employee tạo cha hoặc được giao cha</th><td>Có, còn cùng phòng nhận/canView</td><td>Chính mình hoặc chưa phân công</td><td>Không tự có canManage; canStatus nếu là assignee</td></tr>
+      <tr><th scope="row">Employee chỉ tham gia hoặc cùng phòng</th><td>Không nếu không creator/assignee</td><td>Không</td><td>Không nới quyền</td></tr>
+      <tr><th scope="row">Manager phòng gửi / creator khác phòng nhận</th><td>Không chỉ vì là creator</td><td>Không</td><td>Giữ quyền xem/trao đổi phòng gửi</td></tr>
+      <tr><th scope="row">Inactive / ngoài scope / cha là con</th><td>Không</td><td>Không</td><td>Không</td></tr>
+    </tbody></table></div>
+    <p>Không cần thêm hệ thống ACL hay database grants trong scope này: capability mặc định được suy từ role, scope và relation đang có, có identifier riêng để mở rộng sau. Nếu doanh nghiệp muốn bật/tắt từng người hoặc cho employee giao đồng nghiệp thì cần thêm cấu hình/approval riêng; không giả vờ trường permissions đã tồn tại.</p>
+    <h3>Phạm vi My Tasks</h3>
+    <ul>
+      <li>Tôi đảm nhận: assigneeId=user; Tôi tham gia: participantIds chứa user. Creator không được thay thế assignee trong query. Task con dùng cùng quy tắc, không đòi cha cũng được giao mình.</li>
+      <li>Task do employee tạo và tự nhận: hiện ở Tôi đảm nhận. Tạo nhưng để trống: xem được trong danh sách phòng theo canView, không đưa vào Tôi đảm nhận.</li>
+      <li>Đề xuất bổ sung bộ lọc “Tôi tạo” bằng createdById + canView riêng nếu muốn tìm lại thuận tiện; đây là bộ lọc độc lập, không thay query Tôi đảm nhận. Có thể bỏ khỏi scope khi duyệt mà vẫn giữ truy cập qua Board/phòng.</li>
+      <li>Hiện chưa có multi-assignee: test khẳng định participant không trở thành assignee và payload nhiều assignee không bị nhận rồi bỏ qua. Khi dự án multi được duyệt, mở rộng bằng helper membership và test từng người; không triển khai array schema ngầm trong scope này.</li>
+    </ul>
+  </section>
+
+  <section id="technical">
+    <h2>7. Thay đổi kỹ thuật và rủi ro</h2>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Danh mục module thay đổi"><table><caption>Đường ghi, quyền và source of truth dùng chung</caption><thead><tr><th scope="col">Vùng</th><th scope="col">Thay đổi dự kiến</th><th scope="col">Bảo vệ tương thích</th></tr></thead><tbody>
+      <tr><th scope="row">Domain policy</th><td>model.ts + helper task-actions: canCreateSubtask, canAssignSubtask, allowed actions/primary theo loại task, status, reviewer và quyền.</td><td>Không nới canManage/canStatus; output capability từ server chỉ gợi ý UI, command kiểm lại.</td></tr>
+      <tr><th scope="row">Rows và menu</th><td>work-views.tsx, task-row-menu.tsx, task-hierarchy.tsx, workspace.tsx: một TaskRowActions/Menu dùng chung cho My Tasks/List/Board/child rows, expanded children component.</td><td>Không ảnh hưởng filter/sidebar; task tổng hợp không nhận CTA task lá sai backend.</td></tr>
+      <tr><th scope="row">Context và dialogs</th><td>workspace-context.tsx thêm callback dùng chung cho change/archive; patch tiếp tục mở waiting/completion dialogs. CreateSubtaskDialog riêng, root dialog không có chức năng tạo con.</td><td>Idempotency key giữ qua retry; focus/draft/scroll/cache dùng cùng cơ chế, không đăng ký handler mutation trùng.</td></tr>
+      <tr><th scope="row">Create service</th><td>service.ts: thay riêng gate canManage(parent) bằng canCreateSubtask; canAssignSubtask kiểm riêng assignee; scope từ cha và creator từ phiên.</td><td>Giữ transaction/lockTask/active/depth/completion guard và quyền root create hiện tại; không thay parentTaskId qua PATCH.</td></tr>
+      <tr><th scope="row">Children read API</th><td>GET /api/tasks/:id/children?cursor&amp;limit, mặc định 25, tối đa 100, sort createdAt/_id; trả items,nextCursor,counts,capabilities.</td><td>Lọc canView trước dữ liệu/count, cursor ký/gắn parent/user/scope/archive/query revision; stale revision trả 409 hoặc reset có thông báo. Tách route theo đầy đủ path trước GET detail.</td></tr>
+      <tr><th scope="row">API hiện có</th><td>POST /api/tasks(parentTaskId) và PATCH /api/tasks/:id giữ; GET detail/work thêm capability khi cần; optional Tôi tạo thêm enum riêng.</td><td>Không tạo endpoint status thứ hai; origin/auth/currentUser kiểm active, không tin actor/permission từ body.</td></tr>
+      <tr><th scope="row">Database</th><td>Giữ tasks.parentTaskId, assigneeId, createdById và các counters. Có index parent/archive/createdAt; chỉ thêm _id tie-break nếu explain cho thấy cần.</td><td>Không migration dữ liệu bắt buộc cho capability/CTA; không đổi completionMode hay xóa lịch sử; không backfill participants thành assignees.</td></tr>
+      <tr><th scope="row">CSS/a11y</th><td>subtasks.css và rules row/menu trong globals.css hoặc stylesheet scope riêng; UiIcon và design tokens hiện có.</td><td>Không đổi global button styles gây regression admin/profile; portal không bị overflow container cắt; min target 44px.</td></tr>
+    </tbody></table></div>
+    <h3>Hợp đồng xử lý dữ liệu</h3>
+    <p>GET children là read-only, 401 khi chưa login; 404 khi cha không có hoặc ngoài scope, 400 cursor/ID sai, 409 cursor stale. Tạo con kiểm quyền trong transaction và lỗi rõ field/permission; không đưa thông tin cha ngoài scope trong error. Chọn cùng một helper cho client và backend, vẫn đọc lại quyền hiện hành tại lúc lưu.</p>
+    <p>Lazy loading chỉ tối ưu List trước; Detail đang trả toàn bộ con/comments/history. Đợt triển khai cần chuyển Detail sang children API khi số con vượt page để tránh có control phân trang ở List nhưng tải toàn bộ ngay khi mở Detail. Giữ comments/history hiện tại trong scope, không nhận đã giải quyết toàn bộ tải dữ liệu lớn.</p>
+    <p>Giữ counters chính xác trong transaction hiện có. Sau mutation, refresh workspace + clear affected resource caches, refetch detail và children của cha; không xóa mọi expanded state. Không có realtime hiện tại: phiên người nhận thấy con sau refetch/focus/manual refresh, không hứa cập nhật tức thời đa phiên nếu chưa làm subscription.</p>
+    <h3>Rủi ro phải test</h3>
+    <ul>
+      <li>Thêm con đầu tiên chuyển cha sang nhóm tổng hợp; tránh trông như mất task hoặc làm child bị tính hai lần.</li>
+      <li>Nới subtask-create vô tình nới assignment/participants/full edit; employee phải bị chặn giao người khác ở server dù sửa payload.</li>
+      <li>UI có thể hiện CTA lỗi cho cha reviewer/auto; dùng readiness thực và refetch sau conflict.</li>
+      <li>Tạo con đồng thời complete/archive parent: dùng lock cha cũ, một thao tác phải đọc lại trạng thái rồi fail/retry đúng, không tạo orphan hoặc ghi một phần.</li>
+      <li>Menu dùng chung nhiều view có callback/state cũ, lỗi focus/portal; test cả child row và Board.</li>
+      <li>Thay đổi completion và multi-assignee từ các kế hoạch cũ chưa được duyệt: không tự áp trong patch này.</li>
+    </ul>
+  </section>
+
+  <section id="plan">
+    <h2>8. Kế hoạch, test và tiêu chí nghiệm thu</h2>
+    <div class="columns"><div><h3>Thứ tự triển khai sau duyệt</h3><ol>
+      <li>Chốt quyền employee creator/assignee, phạm vi giao con và giữ completion hiện tại; chốt có thêm bộ lọc Tôi tạo hay không.</li>
+      <li>Policy/actions dùng chung và test domain; thêm gate service độc lập canManage, giữ quyền assign; bổ sung children API exact route + cursor.</li>
+      <li>Gộp CTA/menu và đổi Tiếp tục; nối expanded children, tách child dialog khỏi root modal, cùng cache/patch.</li>
+      <li>Kiểm UI 1440/768/390 px và keyboard; test integration với replica-set test riêng, không seed/reset dữ liệu ứng dụng.</li>
+      <li>Regression My Tasks/Progress/Board/Detail/participants/subtasks, typecheck và production build tuần tự; ghi exit codes/ảnh/giới hạn chưa kiểm.</li>
+    </ol></div><div><h3>Không nằm trong đợt này</h3><ul><li>Không chuyển completion mặc định sang Manual hay thêm workflow cấu hình.</li><li>Không multi-assignee, rich text, dueDate optional khi kế hoạch Create Task chưa duyệt.</li><li>Không duplicate/delete, move/convert, nested nhiều cấp, drag/drop cây hoặc realtime mới.</li><li>Không cấp quyền full-edit cha hay giao đồng nghiệp cho employee từ capability tạo con.</li></ul></div></div>
+    <details open><summary>Ca kiểm thử phải triển khai — chưa phải kết quả pass</summary><ol class="test-list">
+      <li>Todo/doing/waiting/done: tối đa một CTA; waiting là Tiếp tục; trạng thái phụ chỉ nằm menu, không trùng CTA.</li>
+      <li>Task archived hoặc user thiếu canStatus: không có CTA sai; reviewer/cha tổng hợp có actions đúng guards.</li>
+      <li>Menu keyboard Arrow/Home/End/Enter/Escape, click ngoài, restore focus, tooltip/labels, không bị cắt ở desktop/tablet/mobile.</li>
+      <li>Waiting yêu cầu reason và cross-department done yêu cầu result; gọi API trực tiếp không bypass được guard.</li>
+      <li>Employee tự tạo+tự nhận cha tạo con từ List và Detail; cùng quyền/cùng payload/cùng kết quả sau reload.</li>
+      <li>Employee là creator nhưng không assignee: không lọt Tôi đảm nhận, vẫn truy cập theo canView và tạo con nếu đủ quyền.</li>
+      <li>Employee chỉ là assignee, không creator: tạo con được; participant/đồng nghiệp khác không creator/assignee bị chặn.</li>
+      <li>Employee tạo con tự giao/null thành công; sửa payload giao đồng nghiệp/khác phòng hoặc thêm participants không được phép bị chặn; manager giao nhân sự active cùng phòng thành công.</li>
+      <li>Cha done/archive, cha là subtask, sai department hoặc creator giả từ body bị chặn; không cycle/orphan.</li>
+      <li>Con được manager giao cho B xuất hiện trong My Tasks B, không dựa createdById hay parent assignee. Không hỗ trợ multiple giả qua participants.</li>
+      <li>Expand lazy 25 items/page, stable cursor không lặp/mất con, scope và count đúng; permission thay đổi hoặc cursor stale được xử lý.</li>
+      <li>Thêm con đầu tiên/hoàn thành/mở lại con: count/group/Detail/parent progress cập nhật; không double count task context.</li>
+      <li>Hai con cuối complete đồng thời: giữ status và audit như logic hiện tại. Creator subtask mới không đổi completion mode của cha.</li>
+      <li>Double-click/retry cùng UUID không tạo hai con/audit/notification; mutation mới không reuse key cũ.</li>
+      <li>Create đồng thời parent complete/archive: không ghi nửa transaction, đúng thông báo lỗi và draft còn giữ.</li>
+      <li>Archive từ menu giữ preview confirm ảnh hưởng cha; chỉ manager/Admin restore; done→reopen đúng quyền task lá/cha.</li>
+      <li>Root Create Task không có chức năng Subtask; child dialog chỉ mở từ task tồn tại; không thay form Create Task theo đề xuất chưa duyệt.</li>
+      <li>Regression các màn hình dùng TaskRowMenu/TaskHierarchy, filters/scroll/focus/labels; không tràn ngang 390 px và không tăng chiều cao do hover.</li>
+    </ol></details>
+    <p><strong>Nghiệm thu:</strong> 14 tiêu chí trong prompt phải có bằng chứng frontend→API→DB→permission→UI feedback. Không đánh dấu hoàn thành vì component/menu tồn tại. Nếu MongoDB test không chạy thì ghi blocked integration/E2E, không dùng kiểm tra HTML của báo cáo làm bằng chứng sản phẩm.</p>
+    <div class="note"><strong>Các quyết định cần duyệt</strong><ol><li>Cho employee cùng phòng nhận là creator hoặc assignee tạo con bằng quyền riêng, nhưng chỉ tự giao/null; giao người khác giữ cho manager/Admin.</li><li>Giữ completion hiện tại, gồm auto-close cha không reviewer; không thêm Manual mode trong patch CTA.</li><li>Triển khai một CTA + menu + lazy expanded children và tách dialog con; không gộp multi-assignee/rich text/dueDate optional chưa duyệt.</li><li>Bộ lọc Tôi tạo là bổ sung tùy chọn; không dùng creator thay assignee.</li></ol><p>Phase 4 chỉ bắt đầu sau khi kế hoạch này được phê duyệt, đúng mục 12 và 14 của prompt người dùng.</p></div>
+  </section>
+  <footer><p class="meta">Báo cáo được lập từ source và tài liệu chính thức ngày 23/11/2026. Các mẫu Task Row là minh họa thiết kế, không gọi API và không thay đổi dữ liệu. <a href="#top">Về đầu báo cáo</a></p></footer>
+</main></body></html>

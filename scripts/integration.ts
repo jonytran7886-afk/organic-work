@@ -9,6 +9,7 @@ import {
   scope,
 } from "../src/lib/service";
 import { overdue, today } from "../src/lib/model";
+import { verifyPassword } from "../src/lib/password";
 import { queryWork } from "../src/lib/work-query";
 import { groupWork, addDays, counts } from "../src/lib/work-model";
 if (!/test/.test(process.env.MONGODB_DB || ""))
@@ -63,6 +64,97 @@ try {
     ),
   );
   console.log("PASS setup/seed chạy lại, indexes, giữ nội dung và mật khẩu");
+  const resetId = await adminWrite(admin, {
+    kind: "user",
+    name: "Reset test",
+    email: `reset-${Date.now()}@organic.vn`,
+    role: "employee",
+    departmentId: String(ops!.departmentId),
+    active: true,
+    password: "123456",
+  });
+  const otherSession = await d.collection("sessions").insertOne({
+    userId: admin!._id,
+    tokenHash: `reset-other-${Date.now()}`,
+    expiresAt: new Date(Date.now() + 60000),
+  });
+  await d.collection("sessions").insertOne({
+    userId: resetId,
+    tokenHash: `reset-target-${Date.now()}`,
+    expiresAt: new Date(Date.now() + 60000),
+  });
+  await assert.rejects(() =>
+    adminWrite(worker, {
+      kind: "reset-password",
+      _id: String(resetId),
+      password: "654321",
+      confirmPassword: "654321",
+    }),
+  );
+  await assert.rejects(() =>
+    adminWrite(admin, {
+      kind: "reset-password",
+      _id: String(resetId),
+      password: "short",
+      confirmPassword: "short",
+    }),
+  );
+  await assert.rejects(() =>
+    adminWrite(admin, {
+      kind: "reset-password",
+      _id: String(resetId),
+      password: "654321",
+      confirmPassword: "DifferentPassword123",
+    }),
+  );
+  assert.equal(
+    await d.collection("sessions").countDocuments({ userId: resetId }),
+    1,
+  );
+  await adminWrite(admin, {
+    kind: "reset-password",
+    _id: String(resetId),
+    password: "654321",
+    confirmPassword: "654321",
+  });
+  const resetUser = await d.collection("users").findOne({ _id: resetId });
+  assert(verifyPassword("654321", resetUser!.passwordHash));
+  assert(!verifyPassword("123456", resetUser!.passwordHash));
+  assert.equal(
+    await d.collection("sessions").countDocuments({ userId: resetId }),
+    0,
+  );
+  assert(
+    await d.collection("sessions").findOne({ _id: otherSession.insertedId }),
+  );
+  console.log("PASS admin reset password, validation and session revocation");
+  const dated = await createTask(admin, {
+    title: "Date range",
+    owningDepartmentId: String(ops!.departmentId),
+    startDate: "2026-01-01",
+    dueDate: "2026-01-03",
+  });
+  assert.equal(dated.startDate, "2026-01-01");
+  await assert.rejects(() =>
+    createTask(admin, {
+      title: "Invalid range",
+      owningDepartmentId: String(ops!.departmentId),
+      startDate: "2026-01-04",
+      dueDate: "2026-01-03",
+    }),
+  );
+  await assert.rejects(() =>
+    changeTask(admin, String(dated._id), { dueDate: "2025-12-31" }),
+  );
+  await assert.rejects(() =>
+    changeTask(admin, String(dated._id), { startDate: "2026-02-30" }),
+  );
+  await changeTask(admin, String(dated._id), { startDate: "2026-01-02" });
+  assert.equal(
+    (await d.collection("tasks").findOne({ _id: dated._id }))!.startDate,
+    "2026-01-02",
+  );
+  console.log("PASS start/end date validation");
   const task = await createTask(sales, {
     title: "Kiểm thử transaction " + Date.now(),
     description: "Integration",
@@ -88,7 +180,16 @@ try {
     .collection("task_activities")
     .countDocuments({ taskId: task._id });
   await assert.rejects(
-    () => changeTask(worker, String(task._id), { status: "done" }, true),
+    () =>
+      changeTask(
+        worker,
+        String(task._id),
+        {
+          status: "done",
+          result: "Đóng gói 08:30, 500 kiện, đầu mối Vận hành: Thanh Hà",
+        },
+        true,
+      ),
     /TEST_ACTIVITY_FAILURE/,
   );
   assert.equal(
@@ -100,7 +201,10 @@ try {
     count,
   );
   console.log("PASS transaction hủy toàn bộ khi lỗi ghi lịch sử");
-  await changeTask(worker, String(task._id), { status: "done" });
+  await changeTask(worker, String(task._id), {
+    status: "done",
+    result: "Đóng gói 08:30, 500 kiện, đầu mối Vận hành: Thanh Hà",
+  });
   assert(
     (await d.collection("tasks").findOne({ _id: task._id }))!
       .completedAt instanceof Date,
@@ -315,7 +419,10 @@ try {
       ),
     /cá nhân/,
   );
-  await changeTask(worker, String(task._id), { status: "done" });
+  await changeTask(worker, String(task._id), {
+    status: "done",
+    result: "Đóng gói 08:30, 500 kiện, đầu mối Vận hành: Thanh Hà",
+  });
   const finished = await d.collection("tasks").findOne({ _id: task._id });
   assert.equal(finished!.waitingReason, null);
   assert(

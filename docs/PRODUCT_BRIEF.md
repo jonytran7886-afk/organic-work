@@ -40,7 +40,7 @@ Mỗi tài khoản thuộc một phòng ban và có một vai trò trong v1. Cô
 | --- | --- |
 | Admin | Xem và quản lý mọi việc. Tạo, sửa, bật/tắt tài khoản và quản lý danh mục phòng ban. Tài khoản bị tắt mất quyền truy cập ở yêu cầu kế tiếp. Bảo vệ Admin đang hoạt động cuối cùng khỏi thao tác vô hiệu hóa hoặc hạ quyền. |
 | Trưởng bộ phận | Tạo việc nội bộ hoặc gửi yêu cầu từ phòng mình. Xem và bình luận trên việc do phòng mình phụ trách hoặc yêu cầu. Sửa tiêu đề, mô tả, hạn, ưu tiên, phân công, chuyển trạng thái và lưu trữ khi phòng mình phụ trách. |
-| Nhân viên | Xem và bình luận trên việc phòng mình phụ trách. Chuyển trạng thái khi là người được giao việc. |
+| Nhân viên | Tạo việc trong phòng mình, tự nhận hoặc để chưa phân công; không giao cho người khác hoặc gửi sang phòng khác. Xem và bình luận trên việc phòng mình phụ trách. Chuyển trạng thái khi là người được giao việc. |
 
 Áp dụng cùng phạm vi quyền cho Kanban, danh sách, tìm kiếm, bộ đếm, chi tiết, bình luận và lịch sử. Kiểm tra quyền phía máy chủ kể cả khi người dùng mở URL chi tiết trực tiếp hoặc gửi yêu cầu sửa với ID tự nhập. Khi Admin đổi phòng của người đang được giao việc, yêu cầu xử lý các phân công đang mở trước để người phụ trách luôn thuộc phòng xử lý.
 

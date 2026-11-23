@@ -2216,3 +2216,33 @@ table,
   border-radius: 6px;
   padding: 5px 9px;
 }
+.autocomplete {
+  position: relative;
+}
+.autocomplete input[role="combobox"] {
+  width: 100%;
+}
+.autocomplete-options {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 220px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #cfe0d5;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px #003b201a;
+  padding: 4px;
+}
+.autocomplete-options [role="option"],
+.autocomplete-options .hint {
+  padding: 10px 12px;
+  cursor: pointer;
+}
+.autocomplete-options [role="option"]:hover,
+.autocomplete-options .active {
+  background: #edf5e8;
+  border-radius: 5px;
+}

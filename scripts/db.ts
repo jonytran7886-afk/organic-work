@@ -19,12 +19,48 @@ export async function setup() {
     "login_attempts",
     "system_locks",
     "system_counters",
+    "attachments",
+    "notifications",
+    "task_operations",
+    "fs.files",
+    "fs.chunks",
   ])
     if (!(await d.listCollections({ name }).hasNext()))
       await d.createCollection(name);
   await d.collection("departments").createIndex({ code: 1 }, { unique: true });
   await d.collection("users").createIndex({ email: 1 }, { unique: true });
   await d.collection("users").createIndex({ departmentId: 1, active: 1 });
+  await d
+    .collection("tasks")
+    .createIndex({ participantIds: 1, archivedAt: 1, dueDate: 1 });
+  await d
+    .collection("tasks")
+    .createIndex({ parentTaskId: 1, archivedAt: 1, createdAt: 1 });
+  await d
+    .collection("attachments")
+    .createIndex({ uploadedById: 1, uploadKey: 1 }, { unique: true });
+  await d.collection("attachments").createIndex({ taskId: 1, state: 1 });
+  await d.collection("attachments").createIndex({ state: 1, expiresAt: 1 });
+  await d
+    .collection("notifications")
+    .createIndex({ eventId: 1, recipientId: 1 }, { unique: true });
+  await d
+    .collection("notifications")
+    .createIndex({ recipientId: 1, createdAt: -1 });
+  await d
+    .collection("task_operations")
+    .createIndex({ actorId: 1, requestId: 1 }, { unique: true });
+  await d.collection("fs.files").createIndex({ filename: 1, uploadDate: 1 });
+  await d
+    .collection("fs.chunks")
+    .createIndex({ files_id: 1, n: 1 }, { unique: true });
+  await d.collection("tasks").createIndex(
+    { createdById: 1, requestId: 1 },
+    {
+      unique: true,
+      partialFilterExpression: { requestId: { $type: "string" } },
+    },
+  );
   for (const key of [
     "owningDepartmentId",
     "requestingDepartmentId",
@@ -416,7 +452,7 @@ export async function seed() {
   }
   console.log("Seed hoàn tất; không ghi đè dữ liệu đã có.");
 }
-if (process.argv[1]?.endsWith("/db.ts")) {
+if (process.argv[1] && /[/\\]db\.ts$/.test(process.argv[1])) {
   try {
     const command = process.argv[2];
     if (command === "setup") await setup();

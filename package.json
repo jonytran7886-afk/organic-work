@@ -10,6 +10,7 @@
     "db:setup": "tsx --env-file=.env scripts/db.ts setup",
     "db:bootstrap-admin": "tsx --env-file=.env scripts/db.ts bootstrap",
     "db:seed": "tsx --env-file=.env scripts/db.ts seed",
+    "files:cleanup": "tsx --env-file=.env scripts/cleanup-uploads.ts",
     "test:integration": "node --env-file=.env scripts/run-tests.mjs integration",
     "test:e2e": "node --env-file=.env scripts/run-tests.mjs e2e",
     "typecheck": "tsc --noEmit",

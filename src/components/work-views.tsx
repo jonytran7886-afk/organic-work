@@ -1,20 +1,16 @@
 "use client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import {
-  statusNames,
-  priorityNames,
-  overdue,
-  canManage,
-  canStatus,
-} from "@/lib/model";
+import { statusNames, priorityNames, overdue, canManage } from "@/lib/model";
 import { waitingLabel, type WorkTask } from "@/lib/work-model";
 import { useWorkspace } from "./workspace-context";
 import { useQueryResource } from "./use-query-resource";
+import { ParentTaskLinks } from "./task-hierarchy";
+import { TaskRowMenu, TaskRelation, TaskStatusDropdown } from "./task-row-menu";
+import { TaskListRow, TaskListHeading } from "./task-list-row";
 type Row = Record<string, any>;
-export function detailHref(taskId: string, from: string) {
-  return "/tasks/" + taskId + "?" + new URLSearchParams({ from });
-}
+export { detailHref } from "@/lib/work-model";
+import { detailHref } from "@/lib/work-model";
 export default function WorkViews({
   mode,
   user,
@@ -36,7 +32,7 @@ export default function WorkViews({
     path = usePathname(),
     router = useRouter();
   const query = params.toString();
-  const { cache, expire } = useWorkspace();
+  const { cache, expire, expandedParents } = useWorkspace();
   const requestParams = new URLSearchParams(query);
   requestParams.set("view", mode);
   if (mode === "progress" && !requestParams.has("metric"))
@@ -86,6 +82,7 @@ export default function WorkViews({
     params.get("metric"),
   );
   const completed = params.get("completed") === "1";
+  const participating = params.get("involvement") === "participating";
   return (
     <div className={"work-view " + mode} aria-busy={pending}>
       {mode === "progress" && user.role !== "employee" && (
@@ -112,16 +109,50 @@ export default function WorkViews({
                     scope: "sent",
                     department: "",
                     assignee: "",
-                    metric: "",
+                    metric: "all",
                   })
                 }
               >
                 Yêu cầu đã gửi
               </button>
+              <button
+                className={scope === "incoming" ? "active" : ""}
+                onClick={() =>
+                  update({
+                    scope: "incoming",
+                    department: "",
+                    assignee: "",
+                    metric: "all",
+                  })
+                }
+              >
+                Yêu cầu đến
+              </button>
             </>
           ) : (
             <strong>Tất cả phòng ban</strong>
           )}
+        </div>
+      )}
+      {mode === "mine" && (
+        <div
+          className="scope-tabs involvement-tabs"
+          aria-label="Vai trò của tôi"
+        >
+          <button
+            className={!participating ? "active" : ""}
+            onClick={() => update({ involvement: "", assignee: "" })}
+          >
+            Tôi đảm nhận
+          </button>
+          <button
+            className={participating ? "active" : ""}
+            onClick={() =>
+              update({ involvement: "participating", assignee: "" })
+            }
+          >
+            Tôi tham gia
+          </button>
         </div>
       )}
       {mode === "mine" && (
@@ -252,6 +283,20 @@ export default function WorkViews({
             ))}
           </select>
         </label>
+        {mode === "mine" && (
+          <label>
+            Sắp xếp
+            <select
+              aria-label="Sắp xếp công việc"
+              value={params.get("sort") || "date"}
+              onChange={(event) => update({ sort: event.target.value })}
+            >
+              <option value="date">Hạn gần nhất</option>
+              <option value="priority">Ưu tiên cao nhất</option>
+              <option value="title">Tên A–Z</option>
+            </select>
+          </label>
+        )}
         {baseFilters && (
           <button
             className="secondary clear-filters"
@@ -259,7 +304,10 @@ export default function WorkViews({
               update(
                 mode === "progress"
                   ? { scope, metric: "" }
-                  : { completed: completed ? "1" : "" },
+                  : {
+                      completed: completed ? "1" : "",
+                      involvement: participating ? "participating" : "",
+                    },
                 true,
               )
             }
@@ -329,6 +377,7 @@ export default function WorkViews({
               </div>
               <div className="quick-filters">
                 {[
+                  ["all", "Tất cả"],
                   ["late", "Quá hạn"],
                   ["waiting", "Đang chờ"],
                   ["unassigned", "Chưa phân công"],
@@ -363,57 +412,93 @@ export default function WorkViews({
               </Link>
             )}
           </div>
+          {mode === "mine" &&
+            (!!result.tasks.length || !!result.parents?.length) && (
+              <TaskListHeading />
+            )}
           {!result.tasks.length ? (
-            <div className="empty work-empty">
-              <span>☑</span>
-              <h2>
+            result.parents?.length ? null : (
+              <div className="empty work-empty">
+                <span>☑</span>
+                <h2>
+                  {mode === "mine" &&
+                  !completed &&
+                  !result.hasAssigned &&
+                  !baseFilters
+                    ? participating
+                      ? "Bạn chưa tham gia công việc nào"
+                      : "Bạn chưa có công việc được giao"
+                    : mode === "mine" && completed && !baseFilters
+                      ? "Chưa có công việc đã hoàn thành"
+                      : "Không tìm thấy công việc phù hợp"}
+                </h2>
+                <p>
+                  {baseFilters
+                    ? "Thử thay đổi hoặc xóa bộ lọc."
+                    : mode === "mine"
+                      ? "Các công việc được giao sẽ xuất hiện tại đây."
+                      : "Không có công việc trong nhóm đang chọn."}
+                </p>
                 {mode === "mine" &&
-                !completed &&
-                !result.hasAssigned &&
-                !baseFilters
-                  ? "Bạn chưa có công việc được giao"
-                  : mode === "mine" && completed && !baseFilters
-                    ? "Chưa có công việc đã hoàn thành"
-                    : "Không tìm thấy công việc phù hợp"}
-              </h2>
-              <p>
-                {baseFilters
-                  ? "Thử thay đổi hoặc xóa bộ lọc."
-                  : mode === "mine"
-                    ? "Các công việc được giao sẽ xuất hiện tại đây."
-                    : "Không có công việc trong nhóm đang chọn."}
-              </p>
-              {baseFilters && (
-                <button
-                  className="secondary"
-                  onClick={() =>
-                    update(
-                      mode === "progress"
-                        ? { scope }
-                        : { completed: completed ? "1" : "" },
-                      true,
-                    )
-                  }
-                >
-                  Xóa bộ lọc
-                </button>
-              )}
-            </div>
-          ) : mode === "mine" && !completed ? (
+                  !completed &&
+                  !result.hasAssigned &&
+                  !baseFilters &&
+                  user.role !== "employee" && (
+                    <Link className="primary" href="/progress">
+                      Xem tiến độ
+                    </Link>
+                  )}
+                {baseFilters && (
+                  <button
+                    className="secondary"
+                    onClick={() =>
+                      update(
+                        mode === "progress"
+                          ? { scope }
+                          : {
+                              completed: completed ? "1" : "",
+                              involvement: participating ? "participating" : "",
+                            },
+                        true,
+                      )
+                    }
+                  >
+                    Xóa bộ lọc
+                  </button>
+                )}
+              </div>
+            )
+          ) : mode === "mine" ? (
             <div className="my-groups">
-              {result.groups.map((group: Row) => (
-                <section
-                  className="task-group"
-                  data-group={group.key}
-                  key={group.key}
-                >
-                  <h2>
-                    {group.name}
-                    <span>{group.tasks.length}</span>
-                  </h2>
-                  {group.tasks.map(renderTask)}
-                </section>
-              ))}
+              {result.groups.map((group: Row) => {
+                const visible = group.tasks.filter(
+                  (task: Row) =>
+                    !(
+                      task.parentTaskId &&
+                      expandedParents.has(task.parentTaskId) &&
+                      result.parents?.some(
+                        (parent: Row) => parent._id === task.parentTaskId,
+                      )
+                    ),
+                );
+                if (!visible.length) return null;
+                return (
+                  <details
+                    open
+                    className="task-group"
+                    data-group={group.key}
+                    key={group.key}
+                  >
+                    <summary>
+                      <h2>
+                        {group.name}
+                        <span>{group.tasks.length}</span>
+                      </h2>
+                    </summary>
+                    {visible.map(renderTask)}
+                  </details>
+                );
+              })}
             </div>
           ) : (
             <div className="work-task-list">{result.tasks.map(renderTask)}</div>
@@ -508,13 +593,30 @@ export default function WorkViews({
               </div>
             </section>
           )}
+          <ParentTaskLinks
+            parents={result.parents}
+            from={path + (query ? "?" + query : "")}
+          />
         </>
       )}
     </div>
   );
   function renderTask(t: WorkTask) {
+    if (mode === "mine")
+      return (
+        <TaskListRow
+          key={t._id}
+          task={t}
+          from={path + (query ? "?" + query : "")}
+        />
+      );
     return (
-      <article className="work-task" key={t._id} data-task-id={t._id}>
+      <article
+        className="work-task"
+        key={t._id}
+        data-task-id={t._id}
+        data-child-count={t.activeChildCount || 0}
+      >
         <div className="work-task-main">
           <Link
             className="work-task-title"
@@ -522,6 +624,7 @@ export default function WorkViews({
           >
             {t.title}
           </Link>
+          <TaskRelation task={t} from={path + (query ? "?" + query : "")} />
           <div className="work-task-meta">
             <span className={"status " + t.status}>
               {statusNames[t.status]}
@@ -536,7 +639,8 @@ export default function WorkViews({
             </span>
             {mode === "progress" && (
               <>
-                <span>{dept(t.owningDepartmentId)}</span>
+                <span>Phòng gửi: {dept(t.requestingDepartmentId)}</span>
+                <span>Phòng nhận: {dept(t.owningDepartmentId)}</span>
                 <span>{person(t.assigneeId)}</span>
               </>
             )}
@@ -548,6 +652,11 @@ export default function WorkViews({
           )}
         </div>
         <div className="work-task-actions">
+          <TaskRowMenu
+            task={t}
+            from={path + (query ? "?" + query : "")}
+            busy={busy}
+          />
           {mode === "progress" &&
             !t.assigneeId &&
             !t.archivedAt &&
@@ -574,37 +683,7 @@ export default function WorkViews({
                 </select>
               </label>
             )}
-          {canStatus(user, t) && !t.archivedAt && (
-            <>
-              {t.status === "todo" || t.status === "waiting" ? (
-                <button
-                  className="secondary"
-                  disabled={busy}
-                  onClick={() => change(t, { status: "doing" })}
-                >
-                  Bắt đầu
-                </button>
-              ) : null}
-              {t.status !== "done" && t.status !== "waiting" && (
-                <button
-                  className="secondary"
-                  disabled={busy}
-                  onClick={() => change(t, { status: "waiting" })}
-                >
-                  Chuyển sang Đang chờ
-                </button>
-              )}
-              {t.status !== "done" && (
-                <button
-                  className="primary"
-                  disabled={busy}
-                  onClick={() => change(t, { status: "done" })}
-                >
-                  Hoàn thành
-                </button>
-              )}
-            </>
-          )}
+          <TaskStatusDropdown task={t} busy={busy} />
         </div>
       </article>
     );

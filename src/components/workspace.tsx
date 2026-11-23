@@ -15,13 +15,22 @@ import {
   overdue,
   canManage,
   canStatus,
+  canCreateTask,
 } from "@/lib/model";
 import WorkViews, { detailHref } from "./work-views";
 import { WorkspaceContext, type CacheEntry } from "./workspace-context";
 import { useQueryResource } from "./use-query-resource";
 import { BrandLockup, OrganicSymbol, CorporateLogo } from "./brand";
 import SideNavigation from "./side-navigation";
+import Autocomplete from "./autocomplete";
 import Icon from "./ui-icon";
+import Dialog from "./dialog";
+import TaskDetail from "./task-detail";
+import NotificationBell from "./notification-bell";
+import { TaskFilePicker, useTaskFiles } from "./task-files";
+import { ParentTaskLinks, ReassignTask } from "./task-hierarchy";
+import { ParticipantPicker } from "./task-participants";
+import { TaskRowMenu, TaskRelation } from "./task-row-menu";
 import { safeReturnPath, waitingLabel } from "@/lib/work-model";
 type Row = Record<string, any>;
 type Task = Row & { status: string; dueDate?: string | null };
@@ -46,16 +55,130 @@ export default function Workspace({ children }: { children: ReactNode }) {
     [auth, setAuth] = useState(false),
     [busy, setBusy] = useState(false),
     [modal, setModal] = useState(false),
-    [waitingTask, setWaitingTask] = useState<Row | null>(null);
+    [waitingTask, setWaitingTask] = useState<Row | null>(null),
+    [completionTask, setCompletionTask] = useState<Row | null>(null);
+  const actionLock = useRef(false);
+  const [creationParent, setCreationParent] = useState<Row | null>(null);
+  const [reassignTask, setReassignTask] = useState<Row | null>(null);
+  const [archiveTask, setArchiveTask] = useState<Row | null>(null);
+  const creationOrigin = useRef<{
+    location: string;
+    y: number;
+    offset: number | null;
+  } | null>(null);
+  const [restorePosition, setRestorePosition] = useState<{
+    taskId: string;
+    expected: number;
+    location: string;
+    y: number;
+    offset: number | null;
+  } | null>(null);
+  const [creationNotice, setCreationNotice] = useState("");
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const toggleParent = useCallback((id: string) => {
+    setExpandedParents((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const createChild = useCallback((task: Row) => {
+    const row = Array.from(
+      document.querySelectorAll<HTMLElement>(`[data-task-id="${task._id}"]`),
+    ).find((element) => element.getClientRects().length);
+    creationOrigin.current = {
+      location: window.location.pathname + window.location.search,
+      y: window.scrollY,
+      offset: row?.getBoundingClientRect().top ?? null,
+    };
+    setCreationParent(task);
+    setError("");
+    setCreationNotice("");
+    setModal(true);
+  }, []);
+  const reassign = useCallback((task: Row) => {
+    setError("");
+    setReassignTask(task);
+  }, []);
+  useEffect(() => {
+    if (
+      !restorePosition ||
+      restorePosition.location !==
+        window.location.pathname + window.location.search
+    )
+      return;
+    let finished = false;
+    const observer = new MutationObserver(restore);
+    function restore() {
+      if (finished) return;
+      const row = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          `[data-task-id="${restorePosition!.taskId}"][data-child-count]`,
+        ),
+      ).find((element) => element.getClientRects().length);
+      if (!row || Number(row.dataset.childCount) < restorePosition!.expected)
+        return;
+      finished = true;
+      observer.disconnect();
+      window.scrollTo({
+        top:
+          restorePosition!.offset === null
+            ? restorePosition!.y
+            : window.scrollY +
+              row.getBoundingClientRect().top -
+              restorePosition!.offset,
+        behavior: "instant",
+      });
+      setRestorePosition(null);
+    }
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+    });
+    const frame = requestAnimationFrame(restore);
+    const timeout = setTimeout(() => {
+      if (!finished) {
+        window.scrollTo({ top: restorePosition.y, behavior: "instant" });
+        setRestorePosition(null);
+      }
+    }, 4000);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      clearTimeout(timeout);
+    };
+  }, [restorePosition, data]);
+  useEffect(() => {
+    if (!modal) setCreationParent(null);
+  }, [modal]);
   const resourceCache = useRef(new Map<string, CacheEntry>()).current;
   const currentData = useRef(data);
+  const updateOwnName = useCallback((name: string) => {
+    setData((previous) =>
+      previous
+        ? {
+            ...previous,
+            user: { ...previous.user, name },
+            users: previous.users.map((u: Row) =>
+              u._id === previous.user._id ? { ...u, name } : u,
+            ),
+          }
+        : previous,
+    );
+  }, []);
   currentData.current = data;
   const expire = useCallback(() => {
+    setExpandedParents(new Set());
     resourceCache.clear();
     setData(null);
     setAuth(false);
     setModal(false);
     setWaitingTask(null);
+    setCompletionTask(null);
   }, [resourceCache]);
   const list = queryParams.get("mode") === "list";
   const search = queryParams.get("q") || "";
@@ -107,9 +230,11 @@ export default function Workspace({ children }: { children: ReactNode }) {
         ? "board"
         : path.startsWith("/admin")
           ? "admin"
-          : path === "/progress"
-            ? "progress"
-            : "legacy";
+          : path === "/profile"
+            ? "profile"
+            : path === "/progress"
+              ? "progress"
+              : "legacy";
   const refresh = useCallback(async () => {
     try {
       const r = await api("data");
@@ -191,6 +316,7 @@ export default function Workspace({ children }: { children: ReactNode }) {
     const previous = document.activeElement as HTMLElement | null;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (actionLock.current) return;
         setModal(false);
         setWaitingTask(null);
       }
@@ -219,20 +345,46 @@ export default function Workspace({ children }: { children: ReactNode }) {
     };
   }, [modal, waitingTask]);
   async function action(fn: () => Promise<any>) {
+    if (actionLock.current) return false;
+    actionLock.current = true;
     setBusy(true);
     setError("");
     try {
       await fn();
       await refresh();
+      setCreationNotice("Đã cập nhật công việc");
       return true;
     } catch (e: any) {
       setError(e.message);
       return false;
     } finally {
+      actionLock.current = false;
       setBusy(false);
     }
   }
   async function patch(t: Row, v: Row) {
+    if (v.archived === true) {
+      try {
+        const info = await api("tasks/" + t._id);
+        if (info.archiveImpact) {
+          setArchiveTask(t);
+          setError("");
+          return false;
+        }
+      } catch (e: any) {
+        setError(e.message);
+        return false;
+      }
+    }
+    if (
+      v.status === "done" &&
+      t.status !== "done" &&
+      t.owningDepartmentId !== t.requestingDepartmentId
+    ) {
+      setError("");
+      setCompletionTask(t);
+      return false;
+    }
     if (v.status === "waiting" && t.status !== "waiting" && !v.waitingReason) {
       setWaitingTask(t);
       return false;
@@ -247,7 +399,7 @@ export default function Workspace({ children }: { children: ReactNode }) {
     users.find((u) => u._id === id)?.name || "Chưa phân công";
   const dept = (id: string) =>
     departments.find((d) => d._id === id)?.name || "—";
-  const active = all.filter((t) => !t.archivedAt);
+  const active = all.filter((t) => !t.archivedAt && !(t.activeChildCount > 0));
   const tasks: Task[] = boardData?.tasks || [];
   const backPath = safeReturnPath(queryParams.get("from"));
   const currentLocation = path + (query ? "?" + query : "");
@@ -302,6 +454,17 @@ export default function Workspace({ children }: { children: ReactNode }) {
           <span className="eyebrow">CHÀO MỪNG TRỞ LẠI</span>
           <h2>Đăng nhập Organic Work</h2>
           <p className="muted">Sử dụng tài khoản được quản trị viên cấp.</p>
+          {queryParams.get("passwordReset") === "success" && (
+            <p role="status" className="hint">
+              Đã đặt lại mật khẩu và thu hồi các phiên đăng nhập. Vui lòng đăng
+              nhập bằng mật khẩu mới.
+            </p>
+          )}
+          {queryParams.get("passwordChanged") === "success" && (
+            <p role="status" className="hint">
+              Đã đổi mật khẩu. Vui lòng đăng nhập lại.
+            </p>
+          )}
           {error && (
             <div role="alert" className="error">
               {error}
@@ -316,7 +479,9 @@ export default function Workspace({ children }: { children: ReactNode }) {
                 await api("login", v);
                 await refresh();
                 router.replace(
-                  path.startsWith("/tasks/") || path.startsWith("/admin")
+                  path.startsWith("/tasks/") ||
+                    path.startsWith("/admin") ||
+                    path === "/profile"
                     ? currentLocation
                     : "/my-tasks",
                 );
@@ -359,7 +524,19 @@ export default function Workspace({ children }: { children: ReactNode }) {
     );
   return (
     <WorkspaceContext.Provider
-      value={{ data: data!, refresh, cache: resourceCache, expire }}
+      value={{
+        data: data!,
+        refresh,
+        cache: resourceCache,
+        expire,
+        updateOwnName,
+        createChild,
+        reassign,
+        change: patch,
+        busy,
+        expandedParents,
+        toggleParent,
+      }}
     >
       <div className="app">
         <SideNavigation
@@ -390,6 +567,7 @@ export default function Workspace({ children }: { children: ReactNode }) {
                       mine: "Việc của tôi",
                       board: "Công việc phòng ban",
                       detail: "Chi tiết công việc",
+                      profile: "Hồ sơ của tôi",
                       admin:
                         path === "/admin/departments"
                           ? "Quản trị / Phòng ban"
@@ -406,7 +584,15 @@ export default function Workspace({ children }: { children: ReactNode }) {
                   timeZone: "Asia/Ho_Chi_Minh",
                 }).format(new Date())}
               </span>
-              <span className="avatar small">{user.name.slice(0, 1)}</span>
+              <Link
+                href="/profile"
+                className="avatar small"
+                aria-label="Hồ sơ của tôi"
+                title="Hồ sơ của tôi"
+              >
+                {user.name.slice(0, 1)}
+              </Link>
+              <NotificationBell />
               <button
                 className="mobile-logout"
                 aria-label="Đăng xuất"
@@ -423,6 +609,11 @@ export default function Workspace({ children }: { children: ReactNode }) {
             </span>
           </header>
           <main className="content">
+            {creationNotice && (
+              <p className="profile-success" role="status">
+                {creationNotice}
+              </p>
+            )}
             {(error || boardResource.error || detailResource.error) && (
               <div role="alert" className="error">
                 {error || boardResource.error || detailResource.error}
@@ -437,7 +628,7 @@ export default function Workspace({ children }: { children: ReactNode }) {
                 </button>
               </div>
             )}
-            {page !== "admin" && (
+            {page !== "admin" && page !== "detail" && (
               <div className="page-heading">
                 <div>
                   <div className="eyebrow">
@@ -455,21 +646,24 @@ export default function Workspace({ children }: { children: ReactNode }) {
                           board: "Công việc phòng ban",
                           admin: "Quản trị không gian",
                           detail: "Chi tiết công việc",
+                          profile: "Hồ sơ của tôi",
                         } as Row
                       )[page]
                     }
                   </h1>
                   <p className="muted">
-                    {page === "progress"
-                      ? "Biết đội đang làm đến đâu, đang vướng gì và việc nào cần phân công."
-                      : page === "board"
-                        ? "Mọi công việc, một góc nhìn. Phối hợp cùng nhau để đi xa hơn."
-                        : page === "mine"
-                          ? "Tập trung vào công việc của bạn, bắt đầu từ điều quan trọng nhất."
-                          : "Thông tin, trao đổi và tiến độ được kết nối tại một nơi."}
+                    {page === "profile"
+                      ? "Cập nhật thông tin cá nhân và bảo mật tài khoản."
+                      : page === "progress"
+                        ? "Biết đội đang làm đến đâu, đang vướng gì và việc nào cần phân công."
+                        : page === "board"
+                          ? "Mọi công việc, một góc nhìn. Phối hợp cùng nhau để đi xa hơn."
+                          : page === "mine"
+                            ? "Tập trung vào công việc của bạn, bắt đầu từ điều quan trọng nhất."
+                            : "Thông tin, trao đổi và tiến độ được kết nối tại một nơi."}
                   </p>
                 </div>
-                {user.role !== "employee" && (
+                {canCreateTask(user) && page !== "profile" && (
                   <button
                     className="primary"
                     aria-label="Tạo công việc"
@@ -625,6 +819,7 @@ export default function Workspace({ children }: { children: ReactNode }) {
                         (
                           {
                             owned: "Phòng tôi phụ trách",
+                            incoming: "Yêu cầu đến",
                             sent: "Yêu cầu đã gửi",
                             all: "Tất cả phòng ban",
                             visible: "Theo quyền truy cập",
@@ -647,6 +842,7 @@ export default function Workspace({ children }: { children: ReactNode }) {
                             late: "Quá hạn",
                             today: "Hôm nay",
                             unassigned: "Chưa phân công",
+                            all: "Tất cả",
                           } as Row
                         )[queryParams.get("metric") || ""]
                       }{" "}
@@ -678,7 +874,7 @@ export default function Workspace({ children }: { children: ReactNode }) {
                                 {tasks.filter((t) => t.status === s).length}
                               </b>
                             </span>
-                            {user.role !== "employee" && (
+                            {canCreateTask(user) && (
                               <button
                                 aria-label={"Tạo việc trong " + statusNames[s]}
                                 onClick={() => setModal(true)}
@@ -691,8 +887,18 @@ export default function Workspace({ children }: { children: ReactNode }) {
                             {tasks
                               .filter((t) => t.status === s)
                               .map((t) => (
-                                <article className="task-card" key={t._id}>
+                                <article
+                                  className="task-card"
+                                  key={t._id}
+                                  data-task-id={t._id}
+                                  data-child-count={t.activeChildCount || 0}
+                                >
                                   <div className="card-top">
+                                    <TaskRowMenu
+                                      task={t}
+                                      from={currentLocation}
+                                      busy={busy}
+                                    />
                                     <span className={"priority " + t.priority}>
                                       {priorityNames[t.priority]}
                                     </span>
@@ -706,6 +912,10 @@ export default function Workspace({ children }: { children: ReactNode }) {
                                   >
                                     {t.title}
                                   </Link>
+                                  <TaskRelation
+                                    task={t}
+                                    from={currentLocation}
+                                  />
                                   <p className="card-dept">
                                     {dept(t.owningDepartmentId)}
                                     {t.requestingDepartmentId !==
@@ -774,334 +984,41 @@ export default function Workspace({ children }: { children: ReactNode }) {
                   )}
                 </div>
                 <div className="mobile-list">{!list && renderTable(tasks)}</div>
+                <ParentTaskLinks
+                  parents={boardData?.parents}
+                  from={currentLocation}
+                />
               </>
             )}
             {page === "detail" &&
               (detail && detail.task._id === path.split("/")[2] ? (
-                <>
-                  <Link className="back-link" href={backPath}>
-                    ‹ Quay lại danh sách
-                  </Link>
-                  <div className="detail-layout">
-                    <section className="panel detail-main">
-                      <div className="card-top">
-                        <span className="task-code">
-                          OW-{detail.task._id.slice(-4).toUpperCase()}
-                        </span>
-                        {detail.task.archivedAt && (
-                          <span className="late-label">Đã lưu trữ</span>
-                        )}
-                        <span className={"priority " + detail.task.priority}>
-                          {priorityNames[detail.task.priority]}
-                        </span>
-                      </div>
-                      <h2 className="detail-title">{detail.task.title}</h2>
-                      {canManage(user, detail.task) &&
-                      !detail.task.archivedAt ? (
-                        <form
-                          key={detail.task.updatedAt}
-                          onSubmit={async (e) => {
-                            e.preventDefault();
-                            await patch(detail.task, field(e.currentTarget));
-                          }}
-                        >
-                          <label>
-                            Tiêu đề
-                            <input
-                              name="title"
-                              defaultValue={detail.task.title}
-                              required
-                              maxLength={250}
-                            />
-                          </label>
-                          <label>
-                            Mô tả
-                            <textarea
-                              name="description"
-                              defaultValue={detail.task.description}
-                              rows={4}
-                            />
-                          </label>
-                          <div className="form-grid">
-                            <label>
-                              Hạn hoàn thành
-                              <input
-                                name="dueDate"
-                                type="date"
-                                defaultValue={detail.task.dueDate}
-                                required
-                              />
-                            </label>
-                            <label>
-                              Ưu tiên
-                              <select
-                                name="priority"
-                                defaultValue={detail.task.priority}
-                              >
-                                {Object.entries(priorityNames).map(([k, v]) => (
-                                  <option value={k} key={k}>
-                                    {v}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          </div>
-                          <button className="secondary" disabled={busy}>
-                            Lưu thay đổi
-                          </button>
-                        </form>
-                      ) : (
-                        <p className="description">
-                          {detail.task.description || "Chưa có mô tả"}
-                        </p>
-                      )}
-                      <div className="discussion">
-                        <h2>
-                          Trao đổi công việc{" "}
-                          <span className="counter">
-                            {detail.comments.length}
-                          </span>
-                        </h2>
-                        {detail.comments.length === 0 && (
-                          <p className="muted">
-                            Chưa có bình luận. Bắt đầu trao đổi cùng đồng đội.
-                          </p>
-                        )}
-                        {detail.comments.map((c: Row) => (
-                          <article className="comment" key={c._id}>
-                            <span className="avatar small">
-                              {person(c.authorId).slice(0, 1)}
-                            </span>
-                            <div>
-                              <strong>{person(c.authorId)}</strong>
-                              <time>
-                                {new Date(c.createdAt).toLocaleString("vi-VN", {
-                                  timeZone: "Asia/Ho_Chi_Minh",
-                                })}
-                              </time>
-                              <p>{c.body}</p>
-                            </div>
-                          </article>
-                        ))}
-                        {!detail.task.archivedAt && (
-                          <form
-                            onSubmit={async (e) => {
-                              e.preventDefault();
-                              const form = e.currentTarget;
-                              if (
-                                await action(() =>
-                                  api(
-                                    "tasks/" + detail.task._id + "/comments",
-                                    field(form),
-                                  ),
-                                )
-                              )
-                                form.reset();
-                            }}
-                          >
-                            <label>
-                              Bình luận
-                              <textarea
-                                name="body"
-                                required
-                                maxLength={5000}
-                                rows={3}
-                                placeholder="Viết trao đổi của bạn…"
-                              />
-                            </label>
-                            <button className="primary" disabled={busy}>
-                              Gửi bình luận
-                            </button>
-                          </form>
-                        )}
-                      </div>
-                      <div className="history">
-                        <h2>Lịch sử hoạt động</h2>
-                        {detail.activities.map((a: Row) => (
-                          <div className="activity" key={a._id}>
-                            <i />
-                            <div>
-                              <strong>{person(a.actorId)}</strong>{" "}
-                              {
-                                (
-                                  {
-                                    created: "đã tạo công việc",
-                                    status: "đã đổi trạng thái",
-                                    waitingReason: "đã cập nhật lý do chờ",
-                                    assigneeId: "đã đổi người phụ trách",
-                                    dueDate: "đã sửa ngày hạn",
-                                    title: "đã sửa tiêu đề",
-                                    description: "đã sửa mô tả",
-                                    priority: "đã đổi ưu tiên",
-                                    archived: "đã thay đổi lưu trữ",
-                                  } as Row
-                                )[a.type]
-                              }
-                              {a.type !== "created" &&
-                                a.type !== "description" && (
-                                  <p>
-                                    {activityValue(a.type, a.before)} →{" "}
-                                    {activityValue(a.type, a.after)}
-                                  </p>
-                                )}
-                              <time>
-                                {new Date(a.createdAt).toLocaleString("vi-VN", {
-                                  timeZone: "Asia/Ho_Chi_Minh",
-                                })}
-                              </time>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                    <aside className="panel detail-meta">
-                      <h2>Thông tin công việc</h2>
-                      <label>
-                        Trạng thái
-                        {!detail.task.archivedAt &&
-                        canStatus(user, detail.task) ? (
-                          <select
-                            aria-label="Trạng thái công việc"
-                            value={detail.task.status}
-                            disabled={busy}
-                            onChange={(e) =>
-                              patch(detail.task, { status: e.target.value })
-                            }
-                          >
-                            {statuses.map((s) => (
-                              <option key={s} value={s}>
-                                {statusNames[s]}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <span className={"status " + detail.task.status}>
-                            {statusNames[detail.task.status]}
-                          </span>
-                        )}
-                      </label>
-                      {[
-                        [
-                          "Phòng yêu cầu",
-                          dept(detail.task.requestingDepartmentId),
-                        ],
-                        [
-                          "Phòng phụ trách",
-                          dept(detail.task.owningDepartmentId),
-                        ],
-                        ["Người tạo", person(detail.task.createdById)],
-                      ].map(([k, v]) => (
-                        <div className="meta" key={k}>
-                          <span>{k}</span>
-                          <strong>{v}</strong>
-                        </div>
-                      ))}
-                      <label>
-                        Người phụ trách
-                        {canManage(user, detail.task) &&
-                        !detail.task.archivedAt ? (
-                          <select
-                            aria-label="Phân công người phụ trách"
-                            value={detail.task.assigneeId || ""}
-                            disabled={busy}
-                            onChange={(e) =>
-                              patch(detail.task, {
-                                assigneeId: e.target.value || null,
-                              })
-                            }
-                          >
-                            <option value="">Chưa phân công</option>
-                            {users
-                              .filter(
-                                (u) =>
-                                  u.active &&
-                                  u.departmentId ===
-                                    detail.task.owningDepartmentId,
-                              )
-                              .map((u) => (
-                                <option key={u._id} value={u._id}>
-                                  {u.name}
-                                </option>
-                              ))}
-                          </select>
-                        ) : (
-                          <strong>{person(detail.task.assigneeId)}</strong>
-                        )}
-                      </label>
-                      {detail.task.status === "waiting" && (
-                        <section className="waiting-detail">
-                          <h3>Lý do chờ</h3>
-                          <p>{waitingLabel(detail.task)}</p>
-                          {canStatus(user, detail.task) &&
-                            !detail.task.archivedAt && (
-                              <form
-                                onSubmit={async (e) => {
-                                  e.preventDefault();
-                                  await patch(
-                                    detail.task,
-                                    field(e.currentTarget),
-                                  );
-                                }}
-                              >
-                                <label>
-                                  Lý do chờ hiện tại
-                                  <textarea
-                                    name="waitingReason"
-                                    required
-                                    maxLength={500}
-                                    defaultValue={
-                                      detail.task.waitingReason || ""
-                                    }
-                                  />
-                                </label>
-                                <button className="secondary" disabled={busy}>
-                                  Lưu lý do chờ
-                                </button>
-                              </form>
-                            )}
-                        </section>
-                      )}
-                      <div className="meta">
-                        <span>Ngày đến hạn</span>
-                        <strong>
-                          {detail.task.dueDate || "Chưa có hạn"}{" "}
-                          {overdue(detail.task) && (
-                            <span className="late-label">Quá hạn</span>
-                          )}
-                        </strong>
-                      </div>
-                      {detail.task.completedAt && (
-                        <div className="meta">
-                          <span>Hoàn thành lúc</span>
-                          <strong>
-                            {new Date(detail.task.completedAt).toLocaleString(
-                              "vi-VN",
-                            )}
-                          </strong>
-                        </div>
-                      )}
-                      {canManage(user, detail.task) && (
-                        <button
-                          className="secondary archive-button"
-                          disabled={busy}
-                          onClick={() =>
-                            patch(detail.task, {
-                              archived: !detail.task.archivedAt,
-                            })
-                          }
-                        >
-                          {detail.task.archivedAt
-                            ? "Khôi phục công việc"
-                            : "Lưu trữ công việc"}
-                        </button>
-                      )}
-                    </aside>
-                  </div>
-                </>
+                <TaskDetail
+                  key={detail.task._id}
+                  detail={detail}
+                  user={user}
+                  users={users}
+                  from={backPath}
+                  busy={busy}
+                  change={patch}
+                  create={() => createChild(detail.task)}
+                  reassign={reassign}
+                  comment={(values) =>
+                    action(() =>
+                      api("tasks/" + detail.task._id + "/comments", values),
+                    )
+                  }
+                  complete={() => {
+                    setError("");
+                    setCompletionTask(detail.task);
+                  }}
+                  person={person}
+                  dept={dept}
+                  activityValue={activityValue}
+                />
               ) : (
                 !error && <p className="empty">Đang tải chi tiết…</p>
               ))}
-            {page === "admin" && children}
+            {(page === "admin" || page === "profile") && children}
             <footer className="page-footer">
               <span>Organic Work</span>
               <span>Một đội ngũ. Cùng phát triển.</span>
@@ -1176,6 +1093,94 @@ export default function Workspace({ children }: { children: ReactNode }) {
             </section>
           </div>
         )}
+        {completionTask && (
+          <CompleteTask
+            task={completionTask}
+            busy={busy}
+            error={error}
+            cancel={() => {
+              if (!busy) setCompletionTask(null);
+            }}
+            submit={async (values: Row, upload: () => Promise<string[]>) => {
+              const ok = await action(async () =>
+                api(
+                  "tasks/" + completionTask._id,
+                  { ...values, status: "done", attachmentIds: await upload() },
+                  "PATCH",
+                ),
+              );
+              if (ok) setCompletionTask(null);
+              return ok;
+            }}
+          />
+        )}
+        {reassignTask && (
+          <ReassignTask
+            task={reassignTask}
+            users={users}
+            busy={busy}
+            error={error}
+            close={() => {
+              if (!busy) setReassignTask(null);
+            }}
+            submit={async (values) => {
+              const ok = await action(() =>
+                api("tasks/" + reassignTask._id, values, "PATCH"),
+              );
+              if (ok) setReassignTask(null);
+              return ok;
+            }}
+          />
+        )}
+        {archiveTask && (
+          <Dialog
+            title="Xác nhận lưu trữ công việc con"
+            busy={busy}
+            returnFocus={null}
+            onRequestClose={() => {
+              if (!busy) setArchiveTask(null);
+            }}
+            footer={
+              <>
+                <button
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => setArchiveTask(null)}
+                >
+                  Hủy
+                </button>
+                <button
+                  className="primary"
+                  disabled={busy}
+                  onClick={async () => {
+                    if (
+                      await action(() =>
+                        api(
+                          "tasks/" + archiveTask._id,
+                          { archived: true, confirmArchive: true },
+                          "PATCH",
+                        ),
+                      )
+                    )
+                      setArchiveTask(null);
+                  }}
+                >
+                  Xác nhận lưu trữ
+                </button>
+              </>
+            }
+          >
+            <p>
+              Lưu trữ “{archiveTask.title}” sẽ khiến công việc cha đủ điều kiện
+              hoàn thành. Cha sẽ tự đóng nếu không cần nghiệm thu.
+            </p>
+            {error && (
+              <p role="alert" className="error">
+                {error}
+              </p>
+            )}
+          </Dialog>
+        )}
         {modal && (
           <div className="modal-backdrop">
             <section
@@ -1187,32 +1192,50 @@ export default function Workspace({ children }: { children: ReactNode }) {
               <div className="section-title">
                 <div>
                   <span className="eyebrow">KẾT NỐI CÔNG VIỆC</span>
-                  <h2 id="create-title">Tạo công việc mới</h2>
+                  <h2 id="create-title">
+                    {creationParent
+                      ? "Thêm công việc con"
+                      : "Tạo công việc mới"}
+                  </h2>
                 </div>
                 <button
                   className="close"
                   aria-label="Đóng"
+                  disabled={busy}
                   onClick={() => setModal(false)}
                 >
                   ×
                 </button>
               </div>
               <CreateTask
+                parent={creationParent}
                 departments={departments}
                 users={users}
                 user={user}
                 busy={busy}
                 error={error}
                 cancel={() => setModal(false)}
-                submit={async (v: Row) => {
+                submit={async (v: Row, upload: () => Promise<string[]>) => {
                   let t: any;
                   const ok = await action(async () => {
-                    t = await api("tasks", v);
+                    t = await api("tasks", {
+                      ...v,
+                      attachmentIds: await upload(),
+                    });
                   });
                   if (ok) {
                     setModal(false);
-                    router.push("/tasks/" + t._id);
+                    if (creationParent) {
+                      setCreationNotice("Đã tạo công việc con");
+                      if (creationOrigin.current)
+                        setRestorePosition({
+                          ...creationOrigin.current,
+                          taskId: creationParent._id,
+                          expected: (creationParent.activeChildCount || 0) + 1,
+                        });
+                    } else router.push("/tasks/" + t._id);
                   }
+                  return ok;
                 }}
               />
             </section>
@@ -1226,28 +1249,45 @@ export default function Workspace({ children }: { children: ReactNode }) {
     if (type === "status") return statusNames[v];
     if (type === "priority") return priorityNames[v];
     if (type === "assigneeId") return person(v);
+    if (type === "reviewerId") return person(v);
+    if (type === "participantIds")
+      return (Array.isArray(v) ? v : []).map(person).join(", ") || "Chưa có";
     if (type === "archived") return v ? "Đã lưu trữ" : "Đang hoạt động";
+    if (type === "attachmentIds")
+      return (Array.isArray(v) ? v : [])
+        .map(
+          (fileId: string) =>
+            detail?.attachments?.find((f: Row) => f._id === fileId)?.name ||
+            "Tệp kết quả",
+        )
+        .join(", ");
     return String(v);
   }
   function renderTable(rows: Task[]) {
     return rows.length ? (
-      <div className="table-wrap">
+      <div className="table-wrap task-table-wrap">
         <table>
           <thead>
             <tr>
               <th>Công việc</th>
               <th>Người phụ trách</th>
               <th>Trạng thái</th>
-              <th>Hạn hoàn thành</th>
+              <th>Ngày kết thúc</th>
+              <th>Thao tác</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((t) => (
-              <tr key={t._id}>
+              <tr
+                key={t._id}
+                data-task-id={t._id}
+                data-child-count={t.activeChildCount || 0}
+              >
                 <td>
                   <Link href={detailHref(t._id, currentLocation)}>
                     {t.title}
                   </Link>
+                  <TaskRelation task={t} from={currentLocation} />
                   <small>
                     {dept(t.owningDepartmentId)} · {priorityNames[t.priority]}
                   </small>
@@ -1291,6 +1331,9 @@ export default function Workspace({ children }: { children: ReactNode }) {
                     <small className="overdue-date">Quá hạn</small>
                   )}
                 </td>
+                <td>
+                  <TaskRowMenu task={t} from={currentLocation} busy={busy} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -1306,6 +1349,7 @@ export default function Workspace({ children }: { children: ReactNode }) {
   }
 }
 function CreateTask({
+  parent,
   departments,
   users,
   user,
@@ -1314,16 +1358,39 @@ function CreateTask({
   cancel,
   submit,
 }: any) {
-  const [department, setDepartment] = useState(user.departmentId);
+  const [department, setDepartment] = useState(
+    parent?.owningDepartmentId || user.departmentId,
+  );
+  const [assignee, setAssignee] = useState("");
+  const [participants, setParticipants] = useState<string[]>([]);
+  const [requestId] = useState(() => crypto.randomUUID());
+  const files = useTaskFiles();
   const canAssign = user.role === "admin" || department === user.departmentId;
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
         const v = Object.fromEntries(new FormData(e.currentTarget));
-        submit({ ...v, assigneeId: v.assigneeId || null });
+        submit(
+          {
+            ...v,
+            owningDepartmentId: department,
+            assigneeId: v.assigneeId || null,
+            requestId,
+            participantIds: participants.filter(
+              (personId) => personId !== assignee,
+            ),
+            ...(parent ? { parentTaskId: parent._id } : {}),
+          },
+          files.uploadAll,
+        );
       }}
     >
+      {parent && (
+        <p>
+          Công việc cha: <strong>{parent.title}</strong>
+        </p>
+      )}
       {error && (
         <div className="error" role="alert">
           {error}
@@ -1340,55 +1407,101 @@ function CreateTask({
         />
       </label>
       <label>
-        Mô tả
+        Yêu cầu và kết quả cần bàn giao
         <textarea
           name="description"
           rows={3}
           placeholder="Bổ sung bối cảnh và kết quả mong muốn…"
         />
       </label>
+      <TaskFilePicker draft={files} disabled={busy} />
       <div className="form-grid">
         <label>
           Phòng phụ trách
-          <select
+          <Autocomplete
             name="owningDepartmentId"
+            label="Phòng phụ trách"
+            disabled={!!parent || user.role === "employee"}
             value={department}
-            onChange={(e) => setDepartment(e.target.value)}
-          >
-            {departments.map((d: Row) => (
-              <option key={d._id} value={d._id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+            onChange={(value: string) => {
+              setDepartment(value);
+              setAssignee("");
+              setParticipants([]);
+            }}
+            options={departments.map((d: Row) => ({
+              value: d._id,
+              label: d.name,
+            }))}
+          />
+        </label>
+        <div className="assignee-field">
+          <div className="assignee-label">
+            Người đảm nhận chính
+            {user.active && user.departmentId === department && (
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => {
+                  setAssignee(user._id);
+                  setParticipants((values) =>
+                    values.filter((personId) => personId !== user._id),
+                  );
+                }}
+              >
+                Giao cho tôi
+              </button>
+            )}
+          </div>
+          <Autocomplete
+            key={department}
+            label="Người đảm nhận chính"
+            name="assigneeId"
+            value={assignee}
+            onChange={(value: string) => {
+              setAssignee(value);
+              setParticipants((values) =>
+                values.filter((personId) => personId !== value),
+              );
+            }}
+            disabled={!canAssign}
+            options={[
+              { value: "", label: "Chưa phân công" },
+              ...(canAssign
+                ? users
+                    .filter(
+                      (u: Row) =>
+                        u.active &&
+                        u.departmentId === department &&
+                        (user.role !== "employee" || u._id === user._id),
+                    )
+                    .map((u: Row) => ({
+                      value: u._id,
+                      label: u.name + (u._id === user._id ? " (Tôi)" : ""),
+                    }))
+                : []),
+            ]}
+          />
+        </div>
+        <label>
+          Ngày bắt đầu
+          <input type="date" name="startDate" required />
         </label>
         <label>
-          Người phụ trách
-          <select key={department} name="assigneeId" disabled={!canAssign}>
-            <option value="">Chưa phân công</option>
-            {canAssign &&
-              users
-                .filter((u: Row) => u.active && u.departmentId === department)
-                .map((u: Row) => (
-                  <option key={u._id} value={u._id}>
-                    {u.name}
-                  </option>
-                ))}
-          </select>
-        </label>
-        <label>
-          Hạn hoàn thành
+          Ngày kết thúc
           <input type="date" name="dueDate" required />
         </label>
         <label>
           Ưu tiên
-          <select name="priority" defaultValue="normal">
-            {Object.entries(priorityNames).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </select>
+          <Autocomplete
+            name="priority"
+            label="Ưu tiên"
+            defaultValue="normal"
+            options={Object.entries(priorityNames).map(([value, label]) => ({
+              value,
+              label,
+            }))}
+          />
         </label>
       </div>
       {!canAssign && (
@@ -1396,8 +1509,21 @@ function CreateTask({
           Yêu cầu liên phòng sẽ được trưởng phòng nhận phân công.
         </p>
       )}
+      <ParticipantPicker
+        users={users}
+        departmentId={department}
+        assigneeId={assignee}
+        value={participants}
+        onChange={setParticipants}
+        disabled={busy || user.role === "employee" || !canAssign}
+      />
       <div className="modal-actions">
-        <button type="button" className="secondary" onClick={cancel}>
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy}
+          onClick={cancel}
+        >
           Hủy
         </button>
         <button className="primary" disabled={busy}>
@@ -1405,5 +1531,77 @@ function CreateTask({
         </button>
       </div>
     </form>
+  );
+}
+function CompleteTask({ task, busy, error, cancel, submit }: any) {
+  const files = useTaskFiles();
+  const [requestId] = useState(() => crypto.randomUUID());
+  const [returnFocus] = useState(
+    () => document.activeElement as HTMLElement | null,
+  );
+  return (
+    <Dialog
+      title="Bàn giao kết quả"
+      busy={busy}
+      returnFocus={returnFocus}
+      onRequestClose={cancel}
+      footer={
+        <>
+          <button className="secondary" disabled={busy} onClick={cancel}>
+            Hủy
+          </button>
+          <button className="primary" form="complete-task-form" disabled={busy}>
+            Hoàn thành
+          </button>
+        </>
+      }
+    >
+      <p>{task.title}</p>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      <form
+        id="complete-task-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const values = new FormData(e.currentTarget);
+          submit(
+            {
+              requestId,
+              result: values.get("result"),
+              resultLinks: String(values.get("resultLinks") || "")
+                .split("\n")
+                .map((v) => v.trim())
+                .filter(Boolean),
+            },
+            files.uploadAll,
+          );
+        }}
+      >
+        <label>
+          Kết quả thực hiện
+          <textarea
+            name="result"
+            required={task.owningDepartmentId !== task.requestingDepartmentId}
+            maxLength={5000}
+            rows={4}
+            placeholder="Giờ đóng gói, số lượng dự kiến, đầu mối Vận hành…"
+            disabled={busy}
+          />
+        </label>
+        <label>
+          Liên kết tài liệu
+          <textarea
+            name="resultLinks"
+            rows={2}
+            placeholder="Mỗi dòng một liên kết http hoặc https, tối đa 5 liên kết"
+            disabled={busy}
+          />
+        </label>
+        <TaskFilePicker draft={files} disabled={busy} />
+      </form>
+    </Dialog>
   );
 }

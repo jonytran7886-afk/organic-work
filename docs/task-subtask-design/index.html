@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Thiết kế Task và Subtask ADIGO</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { max-width: 1200px; margin: auto; padding: 28px; line-height: 1.65; overflow-wrap: anywhere; }
+    h1 { font-size: 28px; line-height: 1.3; margin-bottom: 10px; }
+    h2 { font-size: 21px; margin-top: 34px; }
+    h3 { font-size: 17px; }
+    a { text-underline-offset: 3px; }
+    .note { padding: 16px 20px; border: 1px solid GrayText; border-radius: 5px; }
+    .meta { color: GrayText; }
+    .columns { display: grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap: 28px; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; vertical-align: top; padding: 12px; border-bottom: 1px solid GrayText; min-width: 150px; }
+    th { font-weight: 650; }
+    caption { text-align: left; padding: 12px 0; font-weight: 600; }
+    li { margin-bottom: 8px; }
+    nav ol { padding-left: 24px; }
+    code { font-size: .92em; overflow-wrap: anywhere; }
+    pre { max-width: 100%; overflow-x: auto; padding: 12px; border: 1px solid GrayText; }
+    .document { border-top: 1px solid GrayText; padding-top: 20px; margin-top: 36px; scroll-margin-top: 18px; }
+    .document h2 { font-size: 22px; }
+    .document h3 { font-size: 19px; margin-top: 26px; }
+    .document h4 { font-size: 16px; }
+    section[id] { scroll-margin-top: 18px; }
+    @media(max-width:600px) { body { padding: 16px; } h1 { font-size: 24px; } }
+    @media print { body { max-width: none; padding: 0; font-size: 10pt; } .table-wrap { overflow: visible; } th,td { min-width: 0; padding: 7px; } tr { break-inside: avoid; } a { color: inherit; } }
+  </style>
+</head>
+<body id="top">
+  <header>
+    <p class="meta">22/11/2026 · Asia/Saigon · Chờ phê duyệt trước khi chỉnh sửa code</p>
+    <h1>Thiết kế Task và Subtask ADIGO</h1>
+    <p>Hoàn thiện nghiệp vụ trên nền Organic Work: tạo việc thống nhất, nhiều người thực hiện có trách nhiệm rõ, tiến độ và nghiệm thu độc lập, cập nhật cây nhất quán.</p>
+  </header>
+  <div class="note">
+    <strong>Kết luận để duyệt</strong>
+    <p>Tái sử dụng task model, auth, GridFS và transaction hiện có. Bổ sung nhiều assignee thực sự; giữ một primary và giữ nghĩa người tham gia. Tách Manual, Automatic và Approval. Giữ hành vi task cũ, chỉ áp mặc định mới cho task mới sau migration được duyệt.</p>
+    <p>ADIGO được hiểu là repo Organic Work hiện tại. Chưa đổi thương hiệu, code ứng dụng, API hay schema. Tài liệu ClickUp đã được đọc; chưa kiểm thử phiên ClickUp đăng nhập. Luồng ADIGO đã audit theo code, chưa xác nhận end-to-end đạt.</p>
+  </div>
+
+  <nav aria-label="Sáu tài liệu bàn giao">
+    <h2>Sáu phần bàn giao</h2>
+    <ol>
+      <li><a href="#doc-01">ClickUp Research Report</a> — vòng đời, trường dữ liệu, 15 câu hỏi subtask, cấu hình/gói và giới hạn bằng chứng.</li>
+      <li><a href="#doc-02">ADIGO Gap Analysis</a> — lần theo frontend, API, service, cấu trúc ghi, quyền và feedback; rủi ro và baseline thực tế.</li>
+      <li><a href="#doc-03">Functional Specification</a> — vai trò, A–H, modes, transitions, tiến độ và ngoại lệ.</li>
+      <li><a href="#doc-04">Technical Design</a> — MongoDB model, indexes, 30 nhóm API, transactions, concurrency, migration và notifications.</li>
+      <li><a href="#doc-05">UI/UX Specification</a> — List/Board/Detail, composer Quick/Full, tạo liên tiếp, dialog nghiệp vụ và accessibility.</li>
+      <li><a href="#doc-06">Implementation Plan</a> — 5 phase với scope, files, migration, API/UI, acceptance, risk và 77 ca kiểm thử dự kiến.</li>
+    </ol>
+    <p><a href="#field-dictionary">Từ điển 28 trường</a> · <a href="#permission-matrix">Ma trận quyền</a> · <a href="#event-matrix">Sự kiện</a> · <a href="#requirement-coverage">Độ bao phủ prompt</a> · <a href="#doc-07">Kết quả rà soát</a></p>
+    <p class="meta">Toàn bộ nội dung đọc trực tiếp offline trong tệp này; mỗi phần vẫn có liên kết tới nguồn Markdown để chỉnh sửa trong IDE.</p>
+  </nav>
+
+  <section aria-labelledby="gap">
+    <h2 id="gap">Đối chiếu ClickUp với hệ thống hiện tại</h2>
+    <p>“Theo code” chưa đồng nghĩa hoàn thiện runtime. Nguồn chính thức nằm ngay trong cột ClickUp; chi tiết bằng chứng và code path ở tài liệu 01–02.</p>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Bảng đối chiếu tính năng có thể cuộn ngang">
+      <table>
+        <caption>Chức năng, hiện trạng và đề xuất ngày 22/11/2026</caption>
+        <thead><tr><th scope="col">Tính năng</th><th scope="col">ClickUp</th><th scope="col">ADIGO theo code</th><th scope="col">Khoảng trống</th><th scope="col">Đề xuất</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Create Task</th><td><a href="https://help.clickup.com/hc/en-us/articles/6309647350807-Create-a-task">Toolbar và quick create</a>.</td><td>Form chung, POST API, transaction, file, UUID và refresh.</td><td>Thiếu quick/create-next; UI bắt startDate, server tùy chọn.</td><td>TaskComposer cùng schema; hạn vẫn bắt buộc theo doanh nghiệp.</td></tr>
+          <tr><th scope="row">Create Subtask</th><td><a href="https://help.clickup.com/hc/en-us/articles/6310382044567-Create-and-edit-subtasks-in-List-and-Board-view">List/Board</a> và <a href="https://help.clickup.com/hc/en-us/articles/29665922829335-Work-with-subtasks-from-tasks">Detail</a>.</td><td>Menu/Detail → createChild → cùng createTask, khóa cha.</td><td>Chưa cây inline/quick tạo liên tiếp.</td><td>Giữ form/service; thêm tree/context và create-next.</td></tr>
+          <tr><th scope="row">Hierarchy nhiều cấp</th><td><a href="https://help.clickup.com/hc/en-us/articles/6304327753111-Intro-to-ClickApps">Nested ClickApp, tối đa 7 cấp</a>.</td><td>Chỉ một cấp; chặn tạo con dưới con.</td><td>Chưa configurable depth, path, move.</td><td>Giữ một cấp đầu; sau gate mở 3 cấp, cycle/depth guard server.</td></tr>
+          <tr><th scope="row">Multiple Assignees</th><td><a href="https://help.clickup.com/hc/en-us/articles/6309029762583-Multiple-Assignees">ClickApp có trên mọi gói</a>, phải bật.</td><td>Một assignee + nhiều participant; participant không có quyền status.</td><td>Chưa nhiều người thực hiện thực sự.</td><td>Active assignments + primary + submission cá nhân, không đổi nghĩa participant cũ.</td></tr>
+          <tr><th scope="row">Primary owner</th><td>Chưa xác minh vai trò primary native riêng.</td><td>assigneeId là đầu mối duy nhất.</td><td>Không diễn đạt trách nhiệm trong tập nhiều người.</td><td>Primary phải thuộc assignees; một đầu mối chịu trách nhiệm chung.</td></tr>
+          <tr><th scope="row">Reassignment</th><td><a href="https://developer.clickup.com/reference/updatetask">API thêm/bỏ assignees</a>.</td><td>Dialog/PATCH, canManage, active/phòng, before/after/reason, notify mới.</td><td>Chưa đề nghị chuyển việc; chưa notify removal; rủi ro deactivate race.</td><td>Assignment command, request duyệt và user revision lock.</td></tr>
+          <tr><th scope="row">Completion Logic</th><td><a href="https://help.clickup.com/hc/en-us/articles/6304420229527-Incomplete-Warning">Cảnh báo cấu hình</a>; <a href="https://help.clickup.com/hc/en-us/articles/40674788220311-Set-up-a-Kanban-board-for-task-tracking">auto-close là automation được gợi ý</a>.</td><td>Không reviewer: tự đóng theo con; reviewer: giữ doing rồi xác nhận.</td><td>Không mode tường minh, Manual riêng, reject/cycle.</td><td>Ba mode; default Manual cho mới, bảo toàn cũ; approval state riêng.</td></tr>
+          <tr><th scope="row">Progress Tracking</th><td><a href="https://help.clickup.com/hc/en-us/articles/6303499162647-Custom-Field-types">Auto và Manual fields</a>, phụ thuộc cấu hình.</td><td>Đếm con done/active, loại cha tổng hợp khỏi tổng đầu việc.</td><td>Chưa trọng số/estimate/manual; cached count cần đối soát.</td><td>Count trước; 100% không có nghĩa accepted; modes khác sau feature flag.</td></tr>
+          <tr><th scope="row">Permissions</th><td><a href="https://help.clickup.com/hc/en-us/articles/6309266954263-Share-Spaces-Folders-Subfolders-Lists-and-tasks">Location/task sharing</a>, vai trò và gói.</td><td>Admin/phòng nhận/phòng gửi/assignee; server kiểm.</td><td>Chưa capability DTO cho nhiều role mới.</td><td>Giữ scope phòng, capability cho UI và kiểm lại trong command.</td></tr>
+          <tr><th scope="row">Activity History</th><td><a href="https://help.clickup.com/hc/en-us/articles/29723182607127-Task-activity-and-comments">Activity và comments</a>.</td><td>task_activities before/after/actor; handovers giữ các lần bàn giao.</td><td>Chưa xuyên suốt eventId/cycle và cursor.</td><td>Append-only, eventId + aggregateVersion + causationId; page lịch sử.</td></tr>
+          <tr><th scope="row">Move/Convert</th><td><a href="https://help.clickup.com/hc/en-us/articles/6304431740055-Create-nested-subtasks">Menu hỗ trợ</a>; Update API không convert bằng parent:null.</td><td>PATCH cấm parent; chưa có command.</td><td>Thiếu nghiệp vụ hai cha, scope/file/approval.</td><td>Command riêng, lock hai root, same scope, preview, giữ ID.</td></tr>
+          <tr><th scope="row">Followers/Watchers</th><td><a href="https://help.clickup.com/hc/en-us/articles/6325918957335-Notification-settings">Followership theo cấu hình thông báo</a>.</td><td>Participant có notify; chưa watcher riêng.</td><td>Vai trò phối hợp và đăng ký tin chưa tách.</td><td>Watchers riêng, không cấp quyền xem/sửa.</td></tr>
+          <tr><th scope="row">Notifications</th><td><a href="https://help.clickup.com/hc/en-us/articles/6325918957335-Notification-settings">Theo sự kiện/kênh</a>.</td><td>In-app assigned/participating/request/due/completed; dedup event/recipient.</td><td>Thiếu review/remove/reopen/overdue scheduler.</td><td>Domain events; in-app transaction, outbox nếu có kênh ngoài.</td></tr>
+          <tr><th scope="row">Deadline cha–con</th><td><a href="https://help.clickup.com/hc/en-us/articles/34108351520407-Sync-parent-and-subtask-dates">Sync</a> và <a href="https://help.clickup.com/hc/en-us/articles/6304545702423-Remap-Subtask-Due-Dates">remap</a> là cơ chế riêng.</td><td>Ngày độc lập; kiểm start ≤ due.</td><td>Chưa cảnh báo con sau cha/overdue descendants.</td><td>Cảnh báo; không tự dời hạn. Business timezone Việt Nam.</td></tr>
+          <tr><th scope="row">Archive/Delete</th><td><a href="https://help.clickup.com/hc/en-us/articles/6311358652951-Delete-a-task">Archive khác Trash/delete</a>.</td><td>Archive/restore có guard, recompute và confirm ảnh hưởng.</td><td>Chưa soft delete/Trash.</td><td>Soft delete sau; chặn cha còn con hoạt động; không hard delete.</td></tr>
+          <tr><th scope="row">Dependencies/Checklist</th><td>Được mô tả trong <a href="https://help.clickup.com/hc/en-us/articles/6304327753111-Intro-to-ClickApps">ClickApps</a> và <a href="https://help.clickup.com/hc/en-us/articles/6303499162647-Custom-Field-types">progress fields</a>.</td><td>Chưa thấy model/API trong module task.</td><td>Không có cycle/blocked hoặc required checklist guards.</td><td>Bounded DAG và checklist required; không chỉ thêm control UI.</td></tr>
+          <tr><th scope="row">Bulk/Drag and drop</th><td><a href="https://help.clickup.com/hc/en-us/articles/6310382044567-Create-and-edit-subtasks-in-List-and-Board-view">List/Board có bulk và kéo quan hệ</a>.</td><td>Kanban đổi bằng menu; chưa bulk/move.</td><td>Thiếu atomic batch và keyboard fallback.</td><td>Làm command trước, UX cuối; menu luôn thay được drag/drop.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+<!-- BEGIN REVIEW MATRICES -->
+<section id="field-dictionary"><h2>Từ điển dữ liệu</h2><div class="table-wrap" tabindex="0" role="region" aria-label="Từ điển dữ liệu"><table><caption>26 trường trong prompt và 2 scope phòng của repo; hiện trạng theo audit tĩnh ngày 22/11/2026</caption><thead><tr><th scope="col">Trường</th><th scope="col">ClickUp / mức bắt buộc</th><th scope="col">Repo hiện tại</th><th scope="col">Đề xuất ADIGO</th><th scope="col">Kế thừa</th><th scope="col">Nguồn chính thức</th></tr></thead><tbody><tr><th scope="row">Task ID</th><td>System; có ID tài nguyên task</td><td>_id:ObjectId</td><td>Bất biến; con có ID riêng</td><td>Không kế thừa</td><td><a href="https://developer.clickup.com/reference/gettask">Get Task API</a></td></tr>
+<tr><th scope="row">Task title</th><td>name bắt buộc trong Create API</td><td>title bắt buộc 1–250</td><td>Giữ validation; không copy tên cha</td><td>Nhập riêng</td><td><a href="https://developer.clickup.com/reference/createtask">Create Task API</a></td></tr>
+<tr><th scope="row">Description</th><td>Optional trên Create API</td><td>description tối đa 20.000</td><td>Giữ; kết quả yêu cầu trong mô tả</td><td>Nhập riêng</td><td><a href="https://developer.clickup.com/reference/createtask">Create Task API</a></td></tr>
+<tr><th scope="row">Creator</th><td>System; creator trong model</td><td>createdById từ phiên tạo</td><td>Bất biến; import correction riêng ngoài scope đầu</td><td>Actor, không lấy từ cha</td><td><a href="https://developer.clickup.com/reference/gettask">Get Task API</a></td></tr>
+<tr><th scope="row">Assigned by</th><td>Chưa xác minh field native độc lập</td><td>Actor trong assignment activity; initial không có field riêng</td><td>Intervals và events; unknown nếu thiếu lịch sử</td><td>Actor mỗi lần phân công</td><td><a href="https://developer.clickup.com/reference/updatetask">Update Task API</a></td></tr>
+<tr><th scope="row">Assignee</th><td>Optional; single khi Multiple Assignees tắt</td><td>assigneeId nullable, đúng phòng/active</td><td>Một assignment role primary khi chỉ một người</td><td>Không kế thừa</td><td><a href="https://help.clickup.com/hc/en-us/articles/6309029762583-Multiple-Assignees">Multiple Assignees</a></td></tr>
+<tr><th scope="row">Multiple assignees</th><td>Cấu hình Multiple Assignees ClickApp</td><td>Chưa có; participant không tương đương</td><td>primary/co, active tập tối đa 50</td><td>Không kế thừa</td><td><a href="https://help.clickup.com/hc/en-us/articles/6309029762583-Multiple-Assignees">Multiple Assignees</a></td></tr>
+<tr><th scope="row">Primary owner</th><td>Chưa xác minh vai trò native riêng</td><td>Một assignee làm đầu mối</td><td>Đề xuất ADIGO; một primary nếu có assignees</td><td>Không kế thừa</td><td><a href="https://help.clickup.com/hc/en-us/articles/6309029762583-Multiple-Assignees">Multiple Assignees</a></td></tr>
+<tr><th scope="row">Followers / Watchers</th><td>Followership theo event preferences</td><td>Chưa có watcher riêng</td><td>Theo dõi không cấp ACL; tự subscribe</td><td>Không tự copy từ cha</td><td><a href="https://help.clickup.com/hc/en-us/articles/6325918957335-Notification-settings">Notification settings</a></td></tr>
+<tr><th scope="row">Priority</th><td>Optional trong Create API</td><td>low/normal/high/urgent, mặc định normal</td><td>Giữ; label cùng một mapping</td><td>UI có thể gợi ý, người dùng xác nhận</td><td><a href="https://developer.clickup.com/reference/createtask">Create Task API</a></td></tr>
+<tr><th scope="row">Status</th><td>Optional API; workflow/location quyết định</td><td>todo/doing/waiting/done</td><td>statusId → semantic category; guards ở server</td><td>Status riêng</td><td><a href="https://developer.clickup.com/reference/updatetask">Update Task API</a></td></tr>
+<tr><th scope="row">Start date</th><td>Optional Create API</td><td>API optional, UI đang required</td><td>Thống nhất optional, không sau dueDate</td><td>Chỉ gợi ý; không sync ngầm</td><td><a href="https://developer.clickup.com/reference/createtask">Create Task API</a></td></tr>
+<tr><th scope="row">Due date</th><td>Optional Create API</td><td>API/UI bắt buộc YYYY-MM-DD</td><td>Giữ bắt buộc ADIGO; cảnh báo con sau cha</td><td>Dùng hạn cha phải xác nhận</td><td><a href="https://developer.clickup.com/reference/createtask">Create Task API</a></td></tr>
+<tr><th scope="row">Completion date</th><td>System; thời điểm đóng không là approval</td><td>completedAt và handover history</td><td>Current timestamp + completion cycle; reopen xóa current</td><td>Không kế thừa</td><td><a href="https://developer.clickup.com/reference/gettask">Get Task API</a></td></tr>
+<tr><th scope="row">Estimated time</th><td>Cần ClickApp; per-assignee phụ thuộc gói</td><td>Chưa có estimate</td><td>estimateMinutes dương; weighted estimate sau flag</td><td>Nhập riêng; không tự cộng vào effort cha</td><td><a href="https://help.clickup.com/hc/en-us/articles/7257011414807-See-time-estimates-in-tasks-views-and-Dashboard-cards">Time estimates</a></td></tr>
+<tr><th scope="row">Time tracked</th><td>Time entries; tính năng theo gói</td><td>Chưa có tracking</td><td>Roadmap; không dùng giờ tracked làm progress</td><td>Rollup chỉ khi cấu hình rõ</td><td><a href="https://help.clickup.com/hc/en-us/articles/6304291811479-Intro-to-time-tracking">Intro to time tracking</a></td></tr>
+<tr><th scope="row">Progress</th><td>Auto/Manual Custom Fields; cấu hình</td><td>done/active con; chưa progress mode</td><td>Count mặc định, weighted/estimate/manual sau flag</td><td>Tính từ con trực tiếp, không double count</td><td><a href="https://help.clickup.com/hc/en-us/articles/6303499162647-Custom-Field-types">Custom Field types</a></td></tr>
+<tr><th scope="row">Tags</th><td>Optional trong Create API</td><td>Chưa có task tags</td><td>Roadmap, không nhận payload rồi bỏ qua</td><td>Không copy ngầm</td><td><a href="https://developer.clickup.com/reference/createtask">Create Task API</a></td></tr>
+<tr><th scope="row">Attachments</th><td>Tài nguyên upload riêng</td><td>GridFS + metadata, brief/result, scope read</td><td>Giữ ID/quyền khi move; duplicate không copy mặc định</td><td>Không copy file cha</td><td><a href="https://developer.clickup.com/reference/createtaskattachment">Create Task Attachment</a></td></tr>
+<tr><th scope="row">Comments</th><td>Tài nguyên comments riêng</td><td>task_comments; POST và đọc trong detail</td><td>Cursor, idempotency; không thành output mặc định</td><td>Không copy</td><td><a href="https://developer.clickup.com/reference/gettaskcomments">Get Task Comments</a></td></tr>
+<tr><th scope="row">Checklist</th><td>Tính năng task; có thể tính vào Progress Auto</td><td>Chưa có checklist</td><td>Required item gate ở Phase 5; không tăng task count</td><td>Không copy ngầm</td><td><a href="https://help.clickup.com/hc/en-us/articles/6303499162647-Custom-Field-types">Custom Field types</a></td></tr>
+<tr><th scope="row">Custom fields</th><td>Cấu hình; required phụ thuộc gói/API flag</td><td>Chưa có definitions/values</td><td>Roadmap; definition và value version tách</td><td>Definition theo scope; giá trị không tự kế thừa</td><td><a href="https://help.clickup.com/hc/en-us/articles/6303499162647-Custom-Field-types">Custom Field types</a></td></tr>
+<tr><th scope="row">Parent Task</th><td>parent optional; có thể tạo con qua API</td><td>parentTaskId optional, một cấp</td><td>Chung tasks; move command riêng</td><td>Scope từ cha; ID cha do server kiểm</td><td><a href="https://developer.clickup.com/reference/createtask">Create Task API</a></td></tr>
+<tr><th scope="row">Subtasks</th><td>Task riêng, có status/assignee/date</td><td>Cùng collection; counts trên cha</td><td>Một cấp đầu, ba cấp sau gate; descendant limit</td><td>Không copy toàn bộ field cha</td><td><a href="https://help.clickup.com/hc/en-us/articles/6309825777943-Intro-to-subtasks">Intro to subtasks</a></td></tr>
+<tr><th scope="row">Dependencies</th><td>Task relationship; API có quan hệ liên quan</td><td>Chưa có dependency graph</td><td>Hard finish-to-start; scope graph lock/cycle guard</td><td>Không copy cạnh khi duplicate mặc định</td><td><a href="https://developer.clickup.com/reference/gettask">Get Task API</a></td></tr>
+<tr><th scope="row">Activity history</th><td>Task activity có các thay đổi chính</td><td>task_activities; before/after/actor</td><td>Append-only, eventId/cycle/cursor</td><td>Không copy sang task mới</td><td><a href="https://help.clickup.com/hc/en-us/articles/29723182607127-Task-activity-and-comments">Task activity</a></td></tr>
+<tr><th scope="row">Owning department ADIGO</th><td>Không ánh xạ List thành phòng một cách máy móc</td><td>owningDepartmentId bắt buộc task gốc</td><td>Giữ mô hình phòng nhận</td><td>Bắt buộc lấy từ cha tại server</td><td>Quy tắc riêng ADIGO</td></tr>
+<tr><th scope="row">Requesting department ADIGO</th><td>Mô hình doanh nghiệp riêng ADIGO</td><td>requestingDepartmentId từ creator hoặc cha</td><td>Giữ scope phòng gửi; không cho client override</td><td>Bắt buộc lấy từ cha tại server</td><td>Quy tắc riêng ADIGO</td></tr></tbody></table></div></section>
+<p>Primary và assigned-by độc lập chưa được xác minh là trường native ClickUp. Các nguồn chỉ hỗ trợ cột ClickUp; đề xuất và hiện trạng repo không phải tuyên bố về ClickUp.</p>
+<section id="permission-matrix"><h2>Ma trận quyền đề xuất</h2><div class="table-wrap" tabindex="0" role="region" aria-label="Ma trận quyền đề xuất"><table><caption>Modern-v2, task active và canView; user nhiều role hợp quyền allow, mọi guard cấm vẫn ưu tiên; legacy-v1 giữ quyền cũ</caption><thead><tr><th scope="col">Thao tác</th><th scope="col">Admin</th><th scope="col">Manager nhận</th><th scope="col">Manager gửi</th><th scope="col">Primary</th><th scope="col">Co-assignee</th><th scope="col">Reviewer</th><th scope="col">Chỉ xem</th></tr></thead><tbody><tr><th scope="row">Xem/bình luận</th><td>Toàn scope</td><td>Phòng nhận</td><td>Phòng yêu cầu</td><td>Có canView</td><td>Có canView</td><td>Có canView</td><td>Có canView</td></tr>
+<tr><th scope="row">Tạo task độc lập</th><td>Có</td><td>Có</td><td>Liên phòng chưa giao</td><td>Employee: phòng mình, self/null</td><td>Employee: phòng mình, self/null</td><td>Theo role gốc</td><td>Employee: self/null</td></tr>
+<tr><th scope="row">Thêm subtask / giao người khác</th><td>Có</td><td>Có</td><td>Không</td><td>Không nếu chỉ employee</td><td>Không</td><td>Không</td><td>Không</td></tr>
+<tr><th scope="row">Sửa metadata / hạn</th><td>Có</td><td>Có</td><td>Không</td><td>Không nếu chỉ employee</td><td>Không</td><td>Không</td><td>Không</td></tr>
+<tr><th scope="row">Phân công / giao lại</th><td>Có</td><td>Có</td><td>Không</td><td>Đề nghị thôi</td><td>Đề nghị thôi</td><td>Không</td><td>Không</td></tr>
+<tr><th scope="row">Quản lý participants</th><td>Có</td><td>Có</td><td>Không</td><td>Không</td><td>Không</td><td>Không</td><td>Không</td></tr>
+<tr><th scope="row">Theo dõi của chính mình</th><td>Có</td><td>Có</td><td>Có canView</td><td>Có</td><td>Có</td><td>Có canView</td><td>Có canView</td></tr>
+<tr><th scope="row">Status todo/doing/waiting</th><td>Guard workflow</td><td>Guard workflow</td><td>Không</td><td>Guard workflow</td><td>Phần mình; có thể trigger bắt đầu</td><td>Không</td><td>Không</td></tr>
+<tr><th scope="row">Submission cá nhân</th><td>Chỉ nếu là assignee đó</td><td>Chỉ nếu là assignee đó</td><td>Không</td><td>Chính mình</td><td>Chính mình</td><td>Không</td><td>Không</td></tr>
+<tr><th scope="row">Complete / gửi nghiệm thu</th><td>Guard mode</td><td>Guard mode</td><td>Không</td><td>Guard mode</td><td>Không</td><td>Quyết định duyệt riêng</td><td>Không</td></tr>
+<tr><th scope="row">Duyệt / reject</th><td>Đúng cycle, cấm self mặc định</td><td>Chỉ nếu là reviewer</td><td>Chỉ nếu là reviewer</td><td>Cấm self mặc định</td><td>Cấm self mặc định</td><td>Đúng cycle/scope</td><td>Không</td></tr>
+<tr><th scope="row">Reopen task</th><td>Có</td><td>Có</td><td>Không</td><td>Có task mình</td><td>Chỉ reopen phần mình</td><td>Không tự có</td><td>Không</td></tr>
+<tr><th scope="row">Đổi mode / reviewer / policy</th><td>Có</td><td>Có</td><td>Không</td><td>Không</td><td>Không</td><td>Không</td><td>Không</td></tr>
+<tr><th scope="row">Move / convert / archive / delete</th><td>Guard scope/children</td><td>Guard nguồn và đích</td><td>Không</td><td>Không</td><td>Không</td><td>Không</td><td>Không</td></tr>
+<tr><th scope="row">Đặt manual progress</th><td>Có</td><td>Có</td><td>Không</td><td>Nếu workflow bật</td><td>Không</td><td>Không</td><td>Không</td></tr>
+<tr><th scope="row">Tick checklist</th><td>Có</td><td>Có</td><td>Không</td><td>Có</td><td>Mục được giao mình</td><td>Không</td><td>Không</td></tr>
+<tr><th scope="row">Khóa account / handoff</th><td>Có</td><td>Không</td><td>Không</td><td>Không</td><td>Không</td><td>Không</td><td>Không</td></tr></tbody></table></div></section>
+<p>Chỉ xem gồm participant, watcher, colleague hoặc creator không có role quản lý/assignee. Quyền tạo task độc lập do role tổ chức quyết định, không do việc là creator/watch. Anonymous/inactive/outside scope bị từ chối; reviewer chỉ có quyền quyết định chu kỳ được chỉ định.</p>
+<section id="event-matrix"><h2>Sự kiện và thông báo</h2><div class="table-wrap" tabindex="0" role="region" aria-label="Sự kiện và thông báo"><table><caption>13 nhóm sự kiện ADIGO đề xuất; external outbox at-least-once, không hứa exactly-once</caption><thead><tr><th scope="col">Sự kiện</th><th scope="col">Người nhận</th><th scope="col">Ảnh hưởng trạng thái</th><th scope="col">Audit / chống trùng</th></tr></thead><tbody><tr><th scope="row">task.created / subtask.created</th><td>Assignees; manager nhận yêu cầu; watchers đủ scope</td><td>Task mới todo; tính lại cha</td><td>eventId, taskId, version; self loại</td></tr>
+<tr><th scope="row">assignment.added</th><td>Người mới; primary khi cần</td><td>Giữ status; readiness tính lại</td><td>Interval và before/after, request hash</td></tr>
+<tr><th scope="row">assignment.removed / primary.changed</th><td>Người cũ còn scope; primary/manager</td><td>Giữ status; invalidate pending nếu đổi trách nhiệm</td><td>Không gửi title cho người mất scope</td></tr>
+<tr><th scope="row">assignee.submitted / reopened</th><td>Primary; watchers đăng ký</td><td>Không tự coi task done</td><td>Assignment cycle + eventId</td></tr>
+<tr><th scope="row">subtask.completed / parent.status.changed</th><td>Primary cha và watchers</td><td>Recompute bottom-up theo mode</td><td>Một transition mỗi task/cycle; source system</td></tr>
+<tr><th scope="row">deadline.changed</th><td>Assignees, primary, watchers</td><td>Không đổi progress/status</td><td>Event mutation, không mỗi lần refresh</td></tr>
+<tr><th scope="row">task.overdue</th><td>Assignees, primary; manager theo preference</td><td>Chỉ flag theo ngày Việt Nam</td><td>Một lần mỗi task + dueDate + completionCycle + recipient; nhắc lại là loại khác</td></tr>
+<tr><th scope="row">task.reopened</th><td>Primary/assignees/reviewer/watchers</td><td>Clear current completion; invalidate chu kỳ</td><td>Cause chain có visited; không lặp ancestor</td></tr>
+<tr><th scope="row">approval.requested</th><td>Reviewer hiện hành</td><td>pending, task doing</td><td>Unique task/cycle; không auto-resubmit rejected</td></tr>
+<tr><th scope="row">approval.accepted</th><td>Primary/assignees/watchers</td><td>done nếu vẫn eligible</td><td>Đúng cycle/submissionRevision/version</td></tr>
+<tr><th scope="row">approval.rejected / invalidated</th><td>Primary/assignees/reviewer</td><td>doing, giữ chứng cứ cũ</td><td>Reason/cause bắt buộc, không xóa history</td></tr>
+<tr><th scope="row">task.moved / archived / deleted / restored</th><td>Primary và watchers còn scope</td><td>Recompute các bên; preview nếu đủ điều kiện</td><td>Một causationId cho impact plan</td></tr>
+<tr><th scope="row">account.disabled / reviewer.unavailable</th><td>Admin/manager liên quan</td><td>Active user gate tức thì, flags có thể cập nhật sau</td><td>Không báo handoff completed nếu còn pending</td></tr></tbody></table></div></section>
+<section id="requirement-coverage"><h2>Đối chiếu yêu cầu của prompt</h2><div class="table-wrap" tabindex="0" role="region" aria-label="Đối chiếu yêu cầu của prompt"><table><caption>12 phần prompt; thiết kế, baseline và triển khai là các trạng thái khác nhau</caption><thead><tr><th scope="col">Yêu cầu prompt</th><th scope="col">Tài liệu / bảng đáp ứng</th><th scope="col">Bằng chứng / tiêu chí</th><th scope="col">Tình trạng</th></tr></thead><tbody><tr><th scope="row">1 Vai trò và phương pháp</th><td>01, 02, 07</td><td>Phân biệt tài liệu, cấu hình, unknown và đề xuất</td><td>Đủ hồ sơ</td></tr>
+<tr><th scope="row">2 Task/Subtask/Assignment</th><td>01; bảng 28 field; 03 A–H</td><td>15 câu hỏi; nguồn API/help; 26 field gốc + 2 scope repo</td><td>Đủ nghiên cứu tài liệu; phiên thật chưa xác minh</td></tr>
+<tr><th scope="row">3 Completion/progress/ngoại lệ</th><td>03; 04 propagation</td><td>Modes, zero-child, primary/all, reject/reopen, graph</td><td>Đủ thiết kế; chưa triển khai</td></tr>
+<tr><th scope="row">4 List/Detail/Create UX</th><td>05</td><td>Tree/separate/context, composer, create-next, mobile/keyboard</td><td>Đủ đặc tả; chưa UI mới</td></tr>
+<tr><th scope="row">5 Audit source và gap table</th><td>02; bảng 17 tính năng</td><td>Code anchors, auth/service/DB/feedback; build đạt</td><td>Audit tĩnh; runtime DB chưa xác minh</td></tr>
+<tr><th scope="row">6 Data architecture</th><td>04; từ điển field</td><td>Source of truth, partial indexes, locks, legacy policy</td><td>Đủ thiết kế; chưa migration</td></tr>
+<tr><th scope="row">7 API/business rules</th><td>04; bảng quyền</td><td>30 nhóm endpoint, DTO, error, side effect, compatibility</td><td>Đủ thiết kế; chưa endpoint mới</td></tr>
+<tr><th scope="row">8 Events/notifications/history</th><td>04; bảng 13 sự kiện</td><td>In-app transaction; outbox at-least-once, quyền và dedup</td><td>Đủ thiết kế; chưa worker mới</td></tr>
+<tr><th scope="row">9 Test suite</th><td>06</td><td>77 ca: 76 sản phẩm dự kiến và E19 QA hồ sơ đã chạy</td><td>Đặc tả sản phẩm chờ coding; QA hồ sơ đạt; baseline DB blocked</td></tr>
+<tr><th scope="row">10 Sáu deliverable</th><td>01–06 trong cùng report</td><td>Nguồn, gap, functional, technical, UX, phase plan</td><td>Đã có và rà soát</td></tr>
+<tr><th scope="row">11 Nguyên tắc và data safety</th><td>02, 04, 06, 07</td><td>Giữ dữ liệu; migration theo policy; chưa chỉnh code ứng dụng</td><td>Đã tuân thủ phạm vi hồ sơ</td></tr>
+<tr><th scope="row">12 Thứ tự và phê duyệt</th><td>06, 07</td><td>Nghiên cứu → audit → thiết kế → plan → duyệt coding</td><td>Hồ sơ hoàn thiện; chưa có phê duyệt coding</td></tr></tbody></table></div></section>
+<!-- END REVIEW MATRICES -->
+  <div class="columns">
+    <section>
+      <h2>Nền tảng cần giữ</h2>
+      <ul>
+        <li>Chung collection tasks, ObjectId ổn định.</li>
+        <li>Quyền theo phòng và phiên active ở server.</li>
+        <li>Task/con/audit/notification trong transaction.</li>
+        <li>Root lock và retry chống xung đột.</li>
+        <li>File GridFS, bình luận và lịch sử đã có.</li>
+      </ul>
+    </section>
+    <section>
+      <h2>Quyết định nghiệp vụ cần duyệt</h2>
+      <ul>
+        <li>Multiple assignees có primary, participant giữ riêng.</li>
+        <li>Manual mặc định cho task mới, giữ semantics task cũ.</li>
+        <li>Employee gửi đề nghị chuyển, không tự giao người mới.</li>
+        <li>Một cấp trước; mở ba cấp sau gate kỹ thuật.</li>
+        <li>Move cùng scope; soft delete sau, không cascade tự động.</li>
+      </ul>
+    </section>
+  </div>
+
+  <section>
+    <h2>Lộ trình phụ thuộc</h2>
+    <ol>
+      <li><strong>Task/hierarchy nền:</strong> typed DTO, route chính xác, schema chung, composer và tree một cấp.</li>
+      <li><strong>Assignment:</strong> primary/co-assignee, submission, chuyển giao và xử lý tài khoản bị tắt.</li>
+      <li><strong>Completion:</strong> modes, readiness, progress, dependency; sau đó mới bật move/nested.</li>
+      <li><strong>Events/Approval:</strong> chu kỳ nghiệm thu, inbox, watchers, dedup và overdue.</li>
+      <li><strong>UX/Regression:</strong> accessibility, bulk/duplicate/delete theo scope duyệt, load test và build.</li>
+    </ol>
+    <p>Không bật tất cả tính năng chỉ vì có trong ClickUp. Time tracking, custom fields và hybrid progress là roadmap riêng khi nhu cầu được chốt.</p>
+  </section>
+
+  <section class="note">
+    <h2>Kết quả kiểm chứng hiện tại</h2>
+    <p><strong>Đạt:</strong> <code>npm run typecheck -- --incremental false</code> và <code>npm run build</code>, exit 0.</p>
+    <p><strong>Chưa chạy được:</strong> integration trên database audit/test riêng dừng do <code>ECONNREFUSED 127.0.0.1:27018</code>; Docker engine chưa chạy. Chưa chạy E2E ứng dụng; không coi kết quả lịch sử trong repo là kết quả hiện tại.</p>
+    <p>Danh mục 18 unit, 40 integration và 19 E2E/check cases gồm 76 ca sản phẩm dự kiến và E19 kiểm hồ sơ offline đã chạy. Không phải 77 test sản phẩm đã đạt. Cần MongoDB replica set để xác minh lưu/reload, audit, quyền và cập nhật đồng thời.</p>
+    <p><strong>Hồ sơ HTML:</strong> Chromium desktop 1440 px và mobile 390 px đạt kiểm nội dung, điều hướng, keyboard và không tràn ngang. <a href="report-verification.json">Biên bản máy đọc</a> · <a href="review-desktop.png">Ảnh desktop</a> · <a href="review-mobile.png">Ảnh mobile</a>.</p>
+  </section>
+<!-- BEGIN FULL DOCUMENTS -->
+<section id="full-documents"><h2>Toàn bộ hồ sơ nghiên cứu và thiết kế</h2><p>Nội dung đầy đủ đọc offline ngay bên dưới. Sáu phần chính nằm ở 01–06; 07 là phụ lục rà soát. Dùng các liên kết mục lục để đi tới từng phần.</p><article id="doc-01" class="document"><p><a href="#top">Về mục lục</a> · <a href="01-clickup-research.md">Nguồn Markdown</a></p><h2>Nghiên cứu ClickUp cho thiết kế Task và Subtask ADIGO</h2>
+<p>Ngày đối chiếu: 22/11/2026, Asia/Saigon. Trạng thái: hồ sơ để duyệt, chưa triển khai. ADIGO được hiểu là hệ thống trong repo Organic Work; không đổi thương hiệu hoặc tên database theo giả định này.</p>
+<h3>Kết luận sản phẩm</h3>
+<p>Nên học cách ClickUp coi subtask là công việc có định danh, người làm và trạng thái riêng; cho phép tạo từ danh sách lẫn chi tiết; tách tiến độ khỏi việc đóng công việc. Không nên xem auto-completion hoặc một người phụ trách chính là quy tắc mặc định của ClickUp. Hai quy tắc đó cần được quyết định riêng cho ADIGO.</p>
+<p>Các nhãn dưới đây chỉ mức bằng chứng: <strong>Tài liệu</strong> là hành vi được tài liệu chính thức mô tả; <strong>Cấu hình</strong> là hành vi cần ClickApp, quyền hoặc gói; <strong>Chưa xác minh</strong> là chưa đủ căn cứ; <strong>Đề xuất ADIGO</strong> là thiết kế trong các tài liệu 03–06. Không có phiên ClickUp đăng nhập được dùng trong đợt này, nên “Tài liệu” không có nghĩa là đã kiểm thử trên ứng dụng thật.</p>
+<h3>Vòng đời và các trường Task</h3>
+<ul>
+<li><strong>Tạo — Tài liệu:</strong> tạo qua toolbar, quick-create và API <code>POST /api/v2/list/{list_id}/task</code>. API yêu cầu List ở URL và <code>name</code> trong body. Mô tả, assignees, trạng thái, ưu tiên, ngày, estimate, tags, custom fields và parent là các tham số bổ sung. Việc UI hoặc Workspace yêu cầu thêm thông tin phải kiểm tra theo cấu hình. <a href="https://help.clickup.com/hc/en-us/articles/6309647350807-Create-a-task">Create task</a>, <a href="https://developer.clickup.com/reference/createtask">Create Task API</a>.</li>
+<li><strong>Chỉnh sửa, phân công và giao lại — Tài liệu/Cấu hình:</strong> Update Task hỗ trợ cập nhật thông tin và <code>assignees.add/rem</code>; nhiều assignee cần bật Multiple Assignees. Không suy ra từ API rằng mọi thành viên đều được thay người: quyền truy cập công việc vẫn áp dụng. <a href="https://developer.clickup.com/reference/updatetask">Update Task API</a>, <a href="https://help.clickup.com/hc/en-us/articles/6309029762583-Multiple-Assignees">Multiple Assignees</a>.</li>
+<li><strong>Đóng, mở lại và theo dõi — Tài liệu/Cấu hình:</strong> có status và ngày đóng trong mô hình API; không đồng nhất trạng thái Done/Closed với một bước phê duyệt nghiệp vụ của ADIGO. Cấu hình cảnh báo việc chưa hoàn tất được mô tả riêng. Quy tắc tự mở cha khi mở con chưa được xác minh cho mọi cấu hình. <a href="https://help.clickup.com/hc/en-us/articles/6304420229527-Incomplete-Warning">Incomplete Warning</a>, <a href="https://developer.clickup.com/reference/updatetask">Update Task API</a>.</li>
+<li><strong>Sao chép và di chuyển — Tài liệu:</strong> Duplicate tạo công việc độc lập, cho chọn nội dung copy và vị trí đích. Move khác Add to another List: move bỏ vị trí cũ, add giữ cả hai; chuyển List có thể cần map status/custom fields. Chuyển cha của subtask là thao tác khác với đổi List. Không mặc định copy toàn bộ lịch sử hoặc quyền. <a href="https://help.clickup.com/hc/en-us/articles/6309819303703-Duplicate-a-task">Duplicate a task</a>, <a href="https://help.clickup.com/hc/en-us/articles/6329600534935-Move-tasks-between-Lists">Move tasks between Lists</a>.</li>
+<li><strong>Lưu trữ, xóa — Tài liệu:</strong> archive khác delete. Delete đưa task vào Trash; tài liệu hiện ghi thời hạn 30 ngày. Khi con đã bị xóa trước cha, Trash nhóm con dưới cha. Chưa xác minh trực tiếp chuỗi xóa/khôi phục cha cùng con đang hoạt động; không áp chính sách cascade suy đoán vào ADIGO. <a href="https://help.clickup.com/hc/en-us/articles/6311358652951-Delete-a-task">Delete a task</a>, <a href="https://help.clickup.com/hc/en-us/articles/6311742742423-Restore-items-from-the-Trash">Restore from Trash</a>.</li>
+<li><strong>Lịch sử — Tài liệu:</strong> thay đổi trạng thái, người làm và ưu tiên có trong hoạt động công việc. Đây không phải bằng chứng về khả năng xuất audit pháp lý hoặc lưu vô hạn trên mọi gói. <a href="https://help.clickup.com/hc/en-us/articles/29723182607127-Task-activity-and-comments">Task activity and comments</a>.</li>
+</ul>
+<h4>Phân loại trường dữ liệu</h4>
+<ul>
+<li><strong>Sinh bởi hệ thống:</strong> ID, creator, thời điểm tạo/cập nhật/đóng; các tham chiếu List và parent. Không thấy tham số thay creator hoặc “assigned by” trong Create/Update Task đã đọc; chưa kết luận ClickUp tuyệt đối không hỗ trợ qua các cơ chế khác. ADIGO giữ creator bất biến, lưu người giao trong sự kiện phân công.</li>
+<li><strong>Nhập khi tạo/sửa:</strong> title/name; description; assignees; priority; status; start/due; estimate; tags. <code>name</code> bắt buộc ở Create API. Time tracked là dữ liệu ghi nhận thời gian, không nên suy từ trường estimate; chưa nghiên cứu hợp đồng time-entry để đề xuất triển khai trong phạm vi đầu.</li>
+<li><strong>Theo tính năng/cấu hình:</strong> Multiple Assignees, watchers/followers, checklist, Custom Fields, dependencies và các loại progress. Không có bằng chứng đủ để coi “primary owner” là vai trò native tách biệt trong Multiple Assignees; đây là đề xuất ADIGO. Người duyệt cũng phải thiết kế rõ, không gán nhãn approval native chỉ vì có status Review.</li>
+<li><strong>Tài nguyên liên quan:</strong> attachments, comments và activity có luồng riêng; không phải tất cả đều là field tùy ý gửi vào Update Task.</li>
+<li><strong>Kế thừa:</strong> định nghĩa Custom Fields đến từ hierarchy; giá trị trên con có thể khác cha. Không suy ra con luôn kế thừa assignee, deadline hoặc giá trị custom field từ cha. <a href="https://help.clickup.com/hc/en-us/articles/29665922829335-Work-with-subtasks-from-tasks">Work with subtasks</a>.</li>
+<li><strong>Custom field bắt buộc — Cấu hình:</strong> Required Custom Fields phụ thuộc gói. Đặc biệt Create Task API mặc định không enforce required custom fields, trừ khi gửi <code>check_required_custom_fields: true</code>. ADIGO cần enforce nghiệp vụ tại server trên mọi điểm vào. <a href="https://help.clickup.com/hc/en-us/articles/6303499162647-Custom-Field-types">Custom Field types</a>, <a href="https://developer.clickup.com/reference/createtask">Create Task API</a>.</li>
+</ul>
+<h4>Bổ sung thời gian, tài nguyên liên quan và giới hạn kết luận</h4>
+<p>Time estimate là kế hoạch, time tracked là các time entry thực tế; không lấy số giờ đã chạy timer làm tỷ lệ hoàn thành. Time Tracking cần Admin/Owner bật, availability tùy gói; rollup có thể cộng thời gian của cha, con và nested con. Estimate cơ bản có trên mọi gói, nhưng estimate theo từng assignee được tài liệu ghi là Business trở lên. Đây là hai cơ chế khác Progress Auto. <a href="https://help.clickup.com/hc/en-us/articles/6304291811479-Intro-to-time-tracking">Intro to time tracking</a>, <a href="https://help.clickup.com/hc/en-us/articles/7257011414807-See-time-estimates-in-tasks-views-and-Dashboard-cards">Time estimates</a>.</p>
+<p>Comments và attachments có endpoint riêng. API upload attachment không phải bằng chứng Update Task nhận toàn bộ file trong JSON. Chưa kiểm tải file hay timer bằng phiên thật. <a href="https://developer.clickup.com/reference/gettaskcomments">Get Task Comments</a>, <a href="https://developer.clickup.com/reference/createtaskattachment">Create Task Attachment</a>, <a href="https://developer.clickup.com/reference/gettask">Get Task</a>.</p>
+<p>Danh mục 28 trường được đối chiếu riêng trong <a href="#field-dictionary">bản tổng quan đọc được trực tiếp</a>: field bắt buộc, optional/system/configuration, hiện trạng repo và quy tắc kế thừa. Những trường không có bằng chứng native như primary/assigned-by độc lập được đánh dấu rõ, không gán mặc định cho ClickUp.</p>
+<h3>Mười lăm câu hỏi về Subtask</h3>
+<ol>
+<li><strong>Số lượng:</strong> tài liệu giới hạn hiệu năng 1.000 subtask cho một task, bao gồm nested subtasks. Một tài liệu template còn đề cập các con bị xóa trong 51 ngày gần nhất khi áp template; không dùng giới hạn này làm thiết kế ADIGO. <a href="https://help.clickup.com/hc/en-us/articles/29664799512855-Tasks-feature-availability-and-limits">Task limits</a>, <a href="https://help.clickup.com/hc/en-us/articles/6309918176535-Use-task-templates">Templates</a>.</li>
+<li><strong>Nhiều cấp:</strong> có Nested Subtasks ClickApp; bảng ClickApps mô tả tối đa 7 cấp hierarchy cho subtasks. Cần chủ Workspace/Admin bật và cấu hình, không mặc định mọi Workspace bật. <a href="https://help.clickup.com/hc/en-us/articles/6304327753111-Intro-to-ClickApps">ClickApps</a>.</li>
+<li><strong>ID riêng:</strong> Create API tạo subtask bằng <code>parent</code> và trả task có ID; subtask là tài nguyên task riêng. <a href="https://developer.clickup.com/reference/createtask">Create Task API</a>.</li>
+<li><strong>Status riêng:</strong> subtask có thể đặt status trong section con; không chỉ là checkbox của cha. <a href="https://help.clickup.com/hc/en-us/articles/29665922829335-Work-with-subtasks-from-tasks">Work with subtasks</a>.</li>
+<li><strong>Người phụ trách riêng:</strong> có. <a href="https://help.clickup.com/hc/en-us/articles/6309825777943-Intro-to-subtasks">Intro to subtasks</a>.</li>
+<li><strong>Khác người cha:</strong> tài liệu và payload cho phép đặt assignee riêng; không nêu ràng buộc phải trùng cha. Đây là kết luận từ hợp đồng API, chưa chạy phiên thật. <a href="https://developer.clickup.com/reference/createtask">Create Task API</a>.</li>
+<li><strong>Nhiều người:</strong> Multiple Assignees áp dụng cho task; các task con dùng mô hình đó khi bật ClickApp. <a href="https://help.clickup.com/hc/en-us/articles/6309029762583-Multiple-Assignees">Multiple Assignees</a>.</li>
+<li><strong>Chuyển thành task:</strong> có trong menu nested subtask. Riêng Update Task API ghi rõ không thể chuyển con thành task bằng cách đặt <code>parent:null</code>; khả năng UI không đồng nghĩa endpoint này hỗ trợ. <a href="https://help.clickup.com/hc/en-us/articles/6304431740055-Create-nested-subtasks">Nested subtasks</a>, <a href="https://developer.clickup.com/reference/updatetask">Update Task API</a>.</li>
+<li><strong>Chuyển sang cha khác:</strong> có menu; Update Task API hỗ trợ <code>parent</code> chứa ID cha mới. Điều kiện status/location áp dụng khi chuyển vị trí. <a href="https://help.clickup.com/hc/en-us/articles/6304431740055-Create-nested-subtasks">Nested subtasks</a>, <a href="https://developer.clickup.com/reference/updatetask">Update Task API</a>.</li>
+<li><strong>Xóa cha:</strong> Trash có quan hệ cha–con, nhưng cascade đầy đủ cùng khả năng khôi phục con đang hoạt động chưa xác minh thực tế. ADIGO đề xuất soft delete có preview trong tài liệu 03.</li>
+<li><strong>Đóng cha khi còn con:</strong> Incomplete Warning hiển thị cảnh báo nếu bật cho Space và loại mục tương ứng; tài liệu chi tiết không đủ để gọi đây là ràng buộc server bắt buộc trong mọi Workspace. ADIGO đề xuất chặn hoàn thành khi con chưa xong. <a href="https://help.clickup.com/hc/en-us/articles/6304420229527-Incomplete-Warning">Incomplete Warning</a>.</li>
+<li><strong>Mở lại con:</strong> chưa xác minh mặc định cha có tự mở; ADIGO đề xuất tự vô hiệu hóa xác nhận và mở lại cha theo chế độ.</li>
+<li><strong>Deadline con sau cha:</strong> tài liệu sync cho phép cha lấy ngày muộn nhất của con; có cơ chế remap ngày riêng. Chưa xác minh có hard constraint trên mọi đường tạo/cập nhật. ADIGO đề xuất cho phép với cảnh báo, không tự đổi hạn cha. <a href="https://help.clickup.com/hc/en-us/articles/34108351520407-Sync-parent-and-subtask-dates">Sync dates</a>, <a href="https://help.clickup.com/hc/en-us/articles/6304545702423-Remap-Subtask-Due-Dates">Remap dates</a>.</li>
+<li><strong>Tạo ở List:</strong> có tạo ngay tại dòng và Enter để lưu. <a href="https://help.clickup.com/hc/en-us/articles/6310382044567-Create-and-edit-subtasks-in-List-and-Board-view">List/Board subtasks</a>.</li>
+<li><strong>Tạo ở Detail:</strong> có section dưới description và sidebar điều hướng con khi task đã có con. <a href="https://help.clickup.com/hc/en-us/articles/29665922829335-Work-with-subtasks-from-tasks">Work with subtasks</a>.</li>
+</ol>
+<h3>Trạng thái, tiến độ và Automation</h3>
+<p>Progress Auto có thể tính subtasks, checklist và assigned comments; có tùy chọn tính con archive. Tài liệu nêu không roll up tiến độ nested subtask vào Progress Auto. Progress Manual là giá trị đặt tay. Vì vậy không thể coi mọi thanh tiến độ ClickUp là số task con hoàn thành chia tổng số con. Quy tắc lúc không có action item cũng được cấu hình. <a href="https://help.clickup.com/hc/en-us/articles/6303499162647-Custom-Field-types">Custom Field types</a>.</p>
+<p>Tài liệu Kanban gợi ý automation đóng cha khi tất cả con xong. Đây là một cấu hình automation, không chứng minh cha tự đóng ở trạng thái mặc định. Triggers, Conditions và Actions cần xét gói/quyền; có cảnh báo vòng lặp khi action tạo thêm công việc. <a href="https://help.clickup.com/hc/en-us/articles/40674788220311-Set-up-a-Kanban-board-for-task-tracking">Kanban workflow</a>, <a href="https://help.clickup.com/hc/en-us/articles/30241682127127-Create-an-Automation">Create Automation</a>.</p>
+<p>Count-based có lợi vì dễ giải thích; trọng số phù hợp độ phức tạp; estimate phù hợp công suất nhưng cần ước lượng đáng tin; manual linh hoạt nhưng dễ chủ quan; hybrid cần hệ số công khai và không đếm trùng. Trọng số/estimate/hybrid trong tài liệu 03 là đề xuất ADIGO, chưa được xác minh là công thức native mặc định của ClickUp.</p>
+<h3>Assignment và UX</h3>
+<p>ClickUp phân biệt assignees với followers. Followership và thông báo có cấu hình theo sự kiện; không mặc định mọi thay đổi đều gửi cho mọi người. API thêm/bỏ assignee không chứng minh mỗi người có trạng thái “hoàn thành phần việc” riêng. Việc chuyển quyền tự giao lại và xử lý người rời tổ chức chưa được xác minh trong phiên Workspace thực tế. <a href="https://help.clickup.com/hc/en-us/articles/6325918957335-Notification-settings">Notification settings</a>, <a href="https://help.clickup.com/hc/en-us/articles/6309266954263-Share-Spaces-Folders-Subfolders-Lists-and-tasks">Sharing and permissions</a>.</p>
+<p>List/Board hỗ trợ collapse all, expand all, separate tasks; tài liệu yêu cầu separate để con xuất hiện trong kết quả lọc theo cách mô tả. Bulk edit và kéo task lên task khác để đổi quan hệ được hỗ trợ. Detail cho sửa trường, sort và reorder con. Không sao chép nguyên UI; ADIGO cần ưu tiên nút rõ trên mobile và giữ đúng bộ lọc/điểm quay lại. <a href="https://help.clickup.com/hc/en-us/articles/6310382044567-Create-and-edit-subtasks-in-List-and-Board-view">List/Board subtasks</a>, <a href="https://help.clickup.com/hc/en-us/articles/29665922829335-Work-with-subtasks-from-tasks">Detail subtasks</a>.</p>
+<p>Chưa xác minh bằng phiên đăng nhập: tất cả thao tác quick/full/create-next theo gói; đổi creator; deadline vượt cha qua mọi view; cascade delete/restore; tự mở cha; ACL đặc thù trên nhiều List; completion từng assignee. Không dùng các mục này làm “ClickUp đã làm vậy” trong tiêu chí nghiệm thu ADIGO.</p>
+<h4>Mâu thuẫn giữa các tài liệu chính thức</h4>
+<p>Trang List/Board nói guest có Edit hoặc Full edit có thể tạo/sửa subtasks, nhưng Intro to subtasks lại nói guest chỉ có Edit không thể tạo hoặc xóa subtasks. Hai nguồn không thống nhất; kết luận được thu hẹp thành “phụ thuộc quyền, cần kiểm tra bằng Workspace thực tế”, không coi Edit là đủ trên mọi điểm vào. ADIGO không có guest role hiện tại nên không ánh xạ quyền này sang employee. <a href="https://help.clickup.com/hc/en-us/articles/6310382044567-Create-and-edit-subtasks-in-List-and-Board-view">List/Board permissions</a>, <a href="https://help.clickup.com/hc/en-us/articles/6309825777943-Intro-to-subtasks">Intro to subtasks permissions</a>.</p>
+<p>Create-next, cascade delete/restore và tự mở cha vẫn là unknown sau lần rà soát này; không có tài khoản ClickUp được xác định trong ngữ cảnh để kiểm chứng thao tác. Điều này không ngăn thiết kế chính sách ADIGO độc lập, nhưng phải giữ nhãn unknown thay vì kết luận từ nguồn không nói tới hành vi đó.</p>
+</article>
+<article id="doc-02" class="document"><p><a href="#top">Về mục lục</a> · <a href="02-current-system-audit.md">Nguồn Markdown</a></p><h2>Audit module công việc Organic Work cho ADIGO</h2>
+<p>Ngày: 22/11/2026. Phạm vi: frontend, API, service, cấu trúc ghi MongoDB, quyền, thông báo và test trong working tree hiện tại. Đây là audit tĩnh có kiểm tra TypeScript; chưa phải xác nhận production hay kiểm thử end-to-end đạt.</p>
+<h3>Bằng chứng và baseline</h3>
+<ul>
+<li><code>package.json</code>: Next.js 16.4.5, React 19.2.7, MongoDB driver 6.20.0, Zod 4.6.7; backend là Next Route Handler Node.js, không có service backend riêng.</li>
+<li><code>src/lib/db.ts</code>: MongoClient dùng cấu hình môi trường; <code>scripts/db.ts</code> thiết lập collections/indexes và yêu cầu replica set primary cho transaction. Đây là schema suy ra từ code ghi, chưa đối chiếu dữ liệu lưu thực tế.</li>
+<li><code>src/lib/auth.ts</code>: session token băm, cookie HttpOnly/SameSite, Secure production; đọc lại tài khoản active mỗi request. Route kiểm Origin khi ghi.</li>
+<li><code>src/lib/model.ts</code>, <code>service.ts</code>: quyền theo Admin, manager phòng phụ trách, assignee và scope phòng yêu cầu. Không dùng participant làm quyền đổi status.</li>
+<li><code>npm run typecheck -- --incremental false</code>: đạt, exit 0 trong đợt audit.</li>
+<li><code>npm run test:integration</code>, với <code>MONGODB_TEST_DB=organic_work_audit_test_20261122_design</code>: lần sandbox lỗi spawn EPERM; lần chạy được process dừng ở <code>ECONNREFUSED 127.0.0.1:27018</code>. Chưa chạy được ca tích hợp, chưa kết nối DB để ghi fixture.</li>
+<li>Rà soát bổ sung: <code>npm run build</code> đạt, exit 0 sau khi chạy ngoài sandbox hạn chế spawn; Next compile, TypeScript, prerender và build traces hoàn tất. Lần sandbox lỗi EPERM là lỗi quyền process, không phải lỗi biên dịch ứng dụng. Không chạy build song song với dev/E2E.</li>
+<li>E2E chưa chạy vì thiếu MongoDB; Docker CLI có cài nhưng engine <code>dockerDesktopLinuxEngine</code> chưa chạy. Không tự sửa cấu hình database hay khởi động Docker Desktop cho hồ sơ thiết kế. Không kế thừa tuyên bố “33 test đạt” trong tài liệu cũ làm kết quả hiện tại.</li>
+<li>Working tree đã có 80 dòng thay đổi/untracked trước khi thêm hồ sơ này. Không reset, commit, sửa hay phân loại lại những thay đổi đó.</li>
+</ul>
+<h3>Đối chiếu luồng thực tế trong code</h3>
+<h4>Tạo Task</h4>
+<p><code>workspace.tsx/CreateTask</code> → <code>api(&quot;tasks&quot;, payload)</code> → POST <code>/api/tasks</code> → <code>service.createTask</code> → transaction insert task + liên kết file + activity + notification → <code>refresh()</code> → detail hoặc thông báo tạo con.</p>
+<p>Đã nối theo code: title, description, phòng, người chính, người tham gia, ngày, priority, file và request UUID. Employee chỉ tạo trong phòng mình, tự nhận hoặc chưa phân công; yêu cầu liên phòng không tự phân người nhận. UI yêu cầu startDate và dueDate, API chỉ bắt buộc dueDate: đây là lệch validation, không phải lỗi dữ liệu đã xác minh.</p>
+<p>Thiếu: quick create tối giản, create-and-continue, chọn task/subtask trong cùng composer, cấu hình completion ngay khi tạo. Chưa có creator editor và không nên thêm chỉ để giống công cụ khác.</p>
+<h4>Tạo Subtask và hierarchy</h4>
+<p><code>TaskRowMenu</code>/<code>TaskHierarchy</code> → context <code>createChild</code> → cùng CreateTask → <code>parentTaskId</code> → khóa cha bằng <code>lockTask</code> → xác minh manager/Admin, cùng owning department, cha chưa archive/done, cha không phải con → insert và <code>recomputeParent</code> trong transaction → refresh + phục hồi scroll.</p>
+<p>Mô hình chung collection <code>tasks</code>; subtask có ObjectId, assignee, deadline, status riêng. Kế thừa phòng phụ trách và phòng yêu cầu; không ép cùng assignee. Có link cha và tỷ lệ. Hiện giới hạn một cấp; PATCH allowlist không cho thay parent. Chưa có endpoint chuyển cha, tách con thành task, tree pagination, sort thủ công hoặc cấu hình độ sâu.</p>
+<p>List hiện tách cha tổng hợp thành <code>ParentTaskLinks</code>, con là đầu việc riêng. Không phải cây mở rộng ngay dưới từng dòng cha. Tìm kiếm queryWork hiện chỉ theo title. Cha có thể không xuất hiện khi lọc theo con: cần thiết kế parent context rõ, không tự làm lỏng scope quyền.</p>
+<h4>Assignment và nhiều người</h4>
+<p><code>ReassignTask</code> → PATCH <code>/api/tasks/:id</code> → <code>changeTask</code> → xác minh canManage và assignee active đúng phòng → update + lịch sử <code>before/after/reason</code> + thông báo trong transaction.</p>
+<p><code>assigneeId</code> là một người chính; <code>participantIds</code> nhiều người, tối đa 50, khử trùng và loại người chính. <code>validateParticipants</code> kiểm tra active, cùng phòng, quyền xem; UI có bộ lọc Tôi tham gia. Participant có quyền xem/bình luận theo scope phòng, không được quyền đổi status chỉ do được thêm. Do đó <strong>chưa có multiple assignees thực sự</strong> hay completion từng assignee.</p>
+<p>Giao lại giữ những người tham gia còn lại, không đổi phân công con khi giao lại cha. Người cũ mất thao tác riêng assignee nhưng vẫn có thể xem theo phòng. Chưa có workflow đề nghị chuyển việc để employee xin người quản lý duyệt.</p>
+<h4>Completion và progress</h4>
+<p><code>activeChildren</code> lấy con chưa archive; <code>recomputeParent</code> đếm done/total. Không có con: giữ status hiện tại. Có con: toàn todo → todo; còn việc đã bắt đầu → doing; hết con done và không reviewer → done; có reviewer → doing đến khi reviewer/Admin xác nhận.</p>
+<p>Mở con tính lại cha và bỏ mốc duyệt/hoàn thành hiện tại, giữ lịch sử. Hai con cập nhật dùng transaction và ghi <code>hierarchyVersion</code> trên cha để tạo write conflict/retry. Đã có test khai báo cho cập nhật đồng thời và rollback, chưa chạy được trong đợt này.</p>
+<p>Hai chi tiết migration phải giữ: <code>changeTask</code> chỉ áp reviewer completion khi có con hoạt động; reviewer trên task không con hiện không tạo approval gate. <code>recomputeParent</code> cũng không yêu cầu cha có assignee trước khi tự done. Vì vậy chỉ backfill completionMode theo reviewer rồi áp guards mới sẽ đổi hành vi dữ liệu cũ; cần policyVersion legacy riêng.</p>
+<p>Thiếu completionMode tường minh, manual mode độc lập reviewer, approval status/reject/comment và workflow version. Nhãn “đủ điều kiện” nằm ở UI; chưa có event thông báo người duyệt khi đủ điều kiện. Không có progress trọng số, estimate, manual hoặc per-assignee. Bộ đếm loại cha có con để tránh cộng trùng, nhưng phụ thuộc cached <code>activeChildCount</code>; cần reconciliation/migration trước khi mở rộng.</p>
+<h4>Lưu trữ và hoạt động</h4>
+<p>Cha có con hoạt động không archive được; archive con đang mở nếu làm cha đủ điều kiện đóng cần <code>confirmArchive</code>. Restore con yêu cầu cha chưa archive và tính lại cha. File dùng GridFS + metadata attachments, kiểm quyền khi đọc/link; comments có transaction; activities ghi before/after/actor.</p>
+<p>Không có DELETE task, Trash, duplicate, move/bulk task. Các thao tác này là tính năng mới cần chính sách, không phải chỉ nối nút UI vào API sẵn có.</p>
+<h4>Thông báo và cập nhật giao diện</h4>
+<p><code>notifyTask</code> hỗ trợ assigned, participating, request liên phòng, due và completed; unique <code>(eventId, recipientId)</code>; kiểm active/canView khi tạo. <code>notificationsFor</code> lookup task rồi lọc scope hiện tại; tránh hiển thị thông báo đã mất quyền. Người cũ không nhận thông báo gỡ việc riêng. Chưa có watchers, overdue scheduler, ready-for-review, rejected, reopened hoặc outbox cho email/push.</p>
+<p>Client refresh sau mutation của chính phiên; cache resource theo principal và TTL 30 giây. Không thấy WebSocket/SSE hay polling định kỳ cập nhật dữ liệu task giữa hai phiên. TTL cache không đồng nghĩa tự fetch mỗi 30 giây.</p>
+<h3>Khoảng trống theo ưu tiên</h3>
+<p><strong>P0 trước khi mở rộng:</strong></p>
+<ul>
+<li>Thiếu bằng chứng runtime end-to-end hiện tại do DB không chạy; phải khôi phục test environment riêng trước khi ký nghiệm thu.</li>
+<li>Tài khoản bị tắt vẫn có thể còn nằm trong assignee của việc mở: <code>adminWrite</code> chặn đổi phòng khi có assignee mở nhưng không chặn vô hiệu hóa theo cùng điều kiện. Nguy cơ công việc không còn người thực thi; đây là nhánh code cần test tái hiện.</li>
+<li>Phân quyền và canonical progress chưa thành mô-đun dùng chung đủ rõ cho nhiều assignee/many-level; giữ transaction cũ nhưng tách policy trước.</li>
+<li>Catch-all route xét PATCH <code>/tasks/:id</code> trước khi kiểm đầy đủ suffix. Khi thêm <code>/move</code> hoặc <code>/approval</code>, phải dispatch bằng method + toàn bộ path, tránh handler tổng quát nuốt route mới. Chưa có endpoint mới nên chưa kết luận sự cố production.</li>
+</ul>
+<p><strong>P1 để hoàn thiện nghiệp vụ:</strong></p>
+<ul>
+<li>True multiple assignees, vai trò primary và per-assignee submission; không biến participant thành người chịu trách nhiệm ngầm.</li>
+<li>CompletionMode và approval state riêng; guard cho chuyển mode, đổi người duyệt và invalidation sau reopen/move.</li>
+<li>Tree List với context cha đúng filter, composer thống nhất, create-and-next; assignee/date/status editor dùng cùng mutation.</li>
+<li>Move/convert atomic, cycle/depth guard, deterministic lock nhiều root, ảnh hưởng ACL/file/notification.</li>
+<li>Canonical event và activity <code>eventId</code> dùng xuyên suốt; hiện eventId có trong operation/notification nhưng activity không luôn có cùng ID.</li>
+</ul>
+<p><strong>P2 có phạm vi riêng:</strong> dependencies/DAG, checklist, weighted/manual progress, watchers, notification preferences/outbox, soft delete/trash, bulk, duplicate, time tracking, custom fields và drag/drop.</p>
+<h3>Rủi ro kỹ thuật cần đo</h3>
+<ul>
+<li><code>/api/data</code> và <code>queryWork</code> tải toàn bộ task phù hợp rồi group/count trong Node, chưa pagination. Hiện detail không gọi một query cho mỗi con, nhưng validate participants và tạo thông báo vẫn query từng người: nguy cơ fan-out tuyến tính. Chuyển sang truy vấn <code>$in</code> và batch recipient khi mở rộng.</li>
+<li>Assignment validation đọc user trong transaction nhưng admin đổi active/phòng dùng khóa khác; snapshot read đơn thuần không đảm bảo chống race với việc vô hiệu hóa. Cần khóa/version user chung giữa account change và assignment change.</li>
+<li>Idempotency key chống lặp đã có, nhưng chưa gắn hash payload. Cùng key mà payload thay đổi có thể trả kết quả thao tác cũ; cần 409 rõ ràng thay vì giả vờ đã lưu payload mới.</li>
+<li>Task activities/handovers chưa phân trang; <code>handovers</code> embedded tăng dần. Chưa có kết quả load test để đặt ngưỡng chính xác.</li>
+<li>Generic error service thường trả HTTP 400 cho cả quyền/nghiệp vụ. Nên dùng typed errors 403/404/409/422 và không lộ exception hạ tầng.</li>
+<li><code>any</code>/Row phổ biến; thay model cần type DTO và compatibility adapter, tránh UI/backend hiểu khác vai trò.</li>
+</ul>
+<h3>Phạm vi xác nhận</h3>
+<p>“Đã nối theo code” chỉ có nghĩa lần theo frontend → API → service → cấu trúc ghi và feedback. Để gắn nhãn “đã hoàn thiện”, cần chạy lại với MongoDB replica set, login đủ vai trò, lưu/reload, kiểm DB/lịch sử/thông báo và ít nhất hai phiên đồng thời. Các test hiện có trong <code>tests/subtasks.spec.ts</code>, <code>tests/participants-menus.spec.ts</code>, <code>tests/workflow.spec.ts</code>, <code>tests/priority-features.spec.ts</code> và <code>scripts/integration.ts</code> là nền tảng tái sử dụng, không phải kết quả đạt của đợt này.</p>
+<h3>Điểm neo bằng chứng trong source</h3>
+<ul>
+<li>Model và quyền: <a href="../../src/lib/model.ts#L38">canView/canManage/canStatus</a>; cần active session từ <a href="../../src/lib/auth.ts#L6">auth</a>, không hiểu nhầm các helper tự kiểm active.</li>
+<li>Validation/Create: <a href="../../src/lib/service.ts#L20">taskSchema</a>, <a href="../../src/lib/service.ts#L64">createTask</a>, <a href="../../src/lib/service.ts#L174">changeTask</a>.</li>
+<li>Hierarchy: <a href="../../src/lib/task-hierarchy.ts#L6">lockTask</a>, <a href="../../src/lib/task-hierarchy.ts#L25">recomputeParent</a>, <a href="../../src/lib/task-hierarchy.ts#L111">hierarchyDetails</a>.</li>
+<li>Participants: <a href="../../src/lib/task-participants.ts#L6">validateParticipants</a>; thông báo <a href="../../src/lib/notifications.ts#L5">notifyTask</a>, <a href="../../src/lib/notifications.ts#L75">list/read</a>.</li>
+<li>UI tạo: <a href="../../src/components/workspace.tsx#L1757">CreateTask</a>; cha/con/giao lại trong <a href="../../src/components/task-hierarchy.tsx#L44">TaskHierarchy</a>; list trong <a href="../../src/components/work-views.tsx#L19">WorkViews</a>.</li>
+<li>API task trong <a href="../../src/app/api/%5B...path%5D/route.ts">catch-all route</a>; indexes và replica-set guard trong <a href="../../scripts/db.ts#L4">db setup</a>; test database isolation trong <a href="../../scripts/run-tests.mjs#L1">run-tests</a>.</li>
+</ul>
+<p>Các số dòng là điểm neo của working tree tại đợt rà soát, có thể dịch chuyển khi coding. Chưa có production inventory hay query explain để xác nhận hiệu năng/schema của database đang triển khai.</p>
+</article>
+<article id="doc-03" class="document"><p><a href="#top">Về mục lục</a> · <a href="03-functional-specification.md">Nguồn Markdown</a></p><h2>Đặc tả nghiệp vụ Task và Subtask ADIGO</h2>
+<p>Trạng thái: đề xuất chờ duyệt ngày 22/11/2026. Quy tắc trong tài liệu này là thiết kế ADIGO, không phải mô tả mặc định ClickUp. Áp dụng sau migration có kiểm soát; không tự thay hành vi công việc cũ.</p>
+<h3>Vai trò và trách nhiệm</h3>
+<ul>
+<li><strong>Creator:</strong> người tạo thực tế từ phiên đăng nhập, bất biến. Sửa sai/import chỉ qua công cụ Admin chuyên biệt, có lý do và lưu original creator; không cho đổi từ form task.</li>
+<li><strong>Assigned by:</strong> actor trong mỗi sự kiện phân công. Initial assigned by và last assigned by là hai dữ kiện khác nhau; không ghi đè lịch sử bằng một trường cuối.</li>
+<li><strong>Primary owner:</strong> một đầu mối chịu trách nhiệm chung, bắt buộc khi có assignee, phải thuộc tập assignee đang hiệu lực. Task chưa phân công có primary null.</li>
+<li><strong>Assignees:</strong> một hoặc nhiều người thực hiện thực sự; có quyền cập nhật phần việc của mình theo policy, không mặc nhiên có quyền thay người khác hoặc sửa hierarchy.</li>
+<li><strong>Participants:</strong> người phối hợp, giữ nghĩa hiện tại; không tự động chuyển thành assignee. Xem/bình luận theo quyền phòng ban, không được đóng task chỉ vì tham gia.</li>
+<li><strong>Watchers:</strong> đăng ký nhận sự kiện, không được cấp thêm quyền xem hay sửa. Mất scope thì dừng thông báo.</li>
+<li><strong>Reviewer:</strong> người duyệt đang hoạt động, có quyền xem; chỉ reviewer chỉ định hoặc Admin được quyết định nghiệm thu. Modern-v2 mặc định cấm tự duyệt nếu chính mình thuộc assignees, kể cả Admin; ngoại lệ phải bật trong policy có lý do và audit. Legacy giữ quyền hiện tại.</li>
+</ul>
+<h3>Quyền đề xuất</h3>
+<p>Mọi quyền cần phiên active và <code>canView</code> trước; archived/deleted là guard bổ sung. Creator hoặc watcher không tự có quyền quản lý. Phòng gửi chỉ quan sát/trao đổi yêu cầu liên phòng; phòng nhận/Admin phân công.</p>
+<ul>
+<li><strong>Admin:</strong> quản lý task trong toàn hệ thống; không được bỏ qua guard còn con mở/dependency/mode bằng PATCH thường. Override đặc biệt nếu sau này có phải là command riêng kèm lý do, không nằm trong bản đầu.</li>
+<li><strong>Manager phòng phụ trách:</strong> tạo/sửa, thêm con, đổi assignees/participants/reviewer, chọn mode, archive/restore/move trong phạm vi. Không duyệt thay reviewer chỉ vì là manager.</li>
+<li><strong>Manager phòng yêu cầu:</strong> tạo yêu cầu liên phòng chưa phân công, xem/bình luận; chỉ nghiệm thu khi được chỉ định và còn quyền xem. Không đổi người phòng nhận.</li>
+<li><strong>Primary:</strong> nhận việc, đổi todo/doing/waiting, nhập kết quả, yêu cầu đóng hoặc gửi duyệt khi đủ điều kiện. Không tự giao người mới; có thể gửi đề nghị chuyển việc.</li>
+<li><strong>Co-assignee:</strong> nhập/cập nhật phần việc mình, đánh dấu submitted/reopen phần mình. Không đóng task chung hoặc sửa phần việc người khác. Cần output độc lập và hạn riêng thì tạo subtask thay cho một dòng completion cá nhân.</li>
+<li><strong>Employee assignee của cha:</strong> mặc định chưa có quyền giao subtask cho người khác, tương thích repo. Có thể bật <code>delegateSubtasks</code> theo phòng cho primary, nhưng việc giao vẫn trong cùng phòng, active, có audit. Bản đầu để tắt.</li>
+<li><strong>Participant/watcher/người cùng phòng:</strong> xem/bình luận theo phạm vi hiện có; không quyền thay status/assignment từ nhãn tham gia/theo dõi.</li>
+<li><strong>Inactive/outside scope:</strong> bị từ chối ở server kể cả dialog mở từ trước hoặc gọi API trực tiếp.</li>
+</ul>
+<h3>Tạo và chỉnh sửa</h3>
+<p>Giữ title 1–250 ký tự, mô tả tối đa 20.000, phòng bắt buộc, dueDate bắt buộc để phù hợp quy trình quản trị hiện tại; startDate tùy chọn và không sau dueDate. UI và API cùng schema. Cho phép chưa phân công hoặc giao cho tôi theo quyền hiện hành. Quick create vẫn phải có hạn; có thể chọn “dùng hạn cha” nhưng phải hiển thị rõ trước lưu, không âm thầm tự điền.</p>
+<p>Subtask dùng cùng task model. Kế thừa owning/requesting department từ cha tại server, không nhận client sửa scope; creator lấy actor. Title, assignees, priority, deadline, status và kết quả độc lập; UI đề xuất ngày/priority từ cha nhưng chỉ giá trị người dùng xác nhận mới lưu. Không sao chép file, reviewer, watchers hoặc assignees ngầm.</p>
+<p>Độ sâu cấu hình: bản đầu giữ 1 cấp con; giai đoạn nhiều cấp đề xuất tối đa 3 cấp con dưới root (root depth 0), giới hạn server cấu hình 1–7. Trần tổng số hậu duệ đề xuất 500/root, cần đo hiệu năng trước khi mở. Không dùng “7” hoặc “1.000” của ClickUp làm SLA ADIGO.</p>
+<h3>Tám tình huống phân công</h3>
+<h4>A — A tạo rồi giao B</h4>
+<p>A phải có quyền phân công trong phòng nhận; employee chỉ tự nhận hoặc để trống như hiện tại. Không thêm phê duyệt nếu A đã có quyền. Lý do ban đầu tùy chọn. Ghi creator=A, assignment actor=A, assignee=B, primary=B, thời điểm và nguồn; thông báo B sau commit, trừ tự giao. Status todo, progress 0; không đổi creator về B.</p>
+<h4>B — A giao B và C</h4>
+<p>Manager phòng nhận/Admin chọn B,C và primary rõ ràng, ví dụ B. Không yêu cầu duyệt thứ hai. Hai người phải active/cùng phòng/còn scope; lý do tùy chọn; log toàn bộ thêm/bỏ/primary; thông báo cả hai. Mặc định <code>assigneeCompletionPolicy=primary</code>, không bắt đầu tính “50%” chỉ vì B submit. Tùy chọn <code>all</code> yêu cầu tất cả assignee hiện hành submit trước khi task đủ điều kiện đóng. Có thể chọn khi tạo; đổi sau đó phải preview tác động.</p>
+<h4>C — Đổi B sang D lúc đang làm</h4>
+<p>Manager/Admin thực hiện trực tiếp; lý do bắt buộc nếu task đã doing/waiting hoặc có submission. Preview người mất/thêm vai trò. Giao lại giữ task status, ngày, tệp và tiến độ theo subtasks; submission của B giữ trong lịch sử nhưng không dùng làm submission của D. Notify D và B nếu B còn quyền xem. Nếu policy all thì task có thể mất readiness, approval cũ phải invalidated; không tự xóa kết quả lịch sử.</p>
+<h4>D — B giao subtask cho C</h4>
+<p>Nếu B là manager/Admin: được. Nếu B chỉ là employee assignee: gửi đề nghị manager duyệt; cấu hình delegateSubtasks có thể cho phép trực tiếp ở giai đoạn sau. Lý do tùy chọn khi tạo, bắt buộc nếu thay phân công đang thực hiện. Creator là người thực tạo, actor phân công là người quyết định; thông báo C. Assignee cha không tự đổi, progress cha tính lại từ con mới. Không được thêm dưới cha đã done trước khi mở lại.</p>
+<h4>E — B xong, C chưa xong</h4>
+<p>Ghi B submitted, C active. Policy all: chưa được đóng task; primary policy trên task lá: primary vẫn phải xác nhận kết quả chung, không suy từ tick của B rằng C đã xong. Trên cha tổng hợp dùng readiness/mode như phần hoàn thành, không yêu cầu thêm tick primary. Nếu đây là hai subtask: task cha chỉ tính phần con đã done, chưa đủ điều kiện đóng. Thông báo primary khi có submission; không tạo notification trùng cho từng lần retry. Không thay status chung thành done từ mutation completion cá nhân; nếu submission làm đủ toàn bộ điều kiện của cha thì domain completion có thể chuyển cha đúng mode trong cùng transaction.</p>
+<h4>F — Người nhận muốn chuyển người khác</h4>
+<p>Assignee gửi đề nghị kèm lý do và người mong muốn; manager/Admin quyết định, không tự đổi assignment. Đề nghị pending không đổi assignee/status/progress. Sau duyệt dùng đúng command phân công và các guard như C; thông báo người đề nghị, người mới, người cũ còn quyền. Từ chối ghi lý do, không làm thay đổi phân công.</p>
+<h4>G — Người làm bị vô hiệu hóa hoặc rời tổ chức</h4>
+<p>Manager/Admin xử lý danh sách việc đang mở, pending approval và vai trò primary/reviewer. Vô hiệu hóa thông thường cần chọn chuyển giao hoặc đưa vào hàng chờ chưa phân công; vô hiệu hóa khẩn cấp vẫn được Admin thực hiện nhưng đánh cờ <code>needsAssignment</code>/<code>reviewerUnavailable</code>, notify manager, khóa thao tác tài khoản ngay. Không xóa người khỏi lịch sử. Task giữ trạng thái đang thực hiện, tiến độ con không reset; chặn đóng nếu thiếu người hợp lệ. Assignment và deactivate phải dùng chung user revision/lock để tránh giao đúng lúc người đó bị khóa.</p>
+<h4>H — Bỏ toàn bộ assignees</h4>
+<p>Manager/Admin thao tác với lý do bắt buộc và xác nhận; primary về null, không ép todo, đặt needsAssignment. Giữ kết quả đã nộp trong audit nhưng mất readiness nếu cần assignee completion. Notify manager và người cũ còn scope; status/progress theo đầu việc được giữ, approval pending bị vô hiệu nếu thay đổi người chịu trách nhiệm của phiên duyệt. Không cho task chưa phân công được auto-close qua một retry nền.</p>
+<h3>Ba chế độ hoàn thành</h3>
+<p><strong>Manual:</strong> đủ điều kiện chỉ mở khả năng đóng; primary/manager/Admin chủ động xác nhận. Tất cả con done có thể hiển thị 100% nhưng task vẫn doing. Dễ kiểm soát đầu ra, thêm một thao tác và nguy cơ task chờ đóng.</p>
+<p><strong>Automatic:</strong> khi có ít nhất một con hoạt động và tất cả điều kiện đạt, service đóng task một lần. Không có con thì không dùng mệnh đề rỗng “mọi con đã xong” để tự đóng; task độc lập phải được người có quyền hoàn thành. Ít thao tác nhưng dễ đóng ngoài ý muốn khi archive/move làm thay đổi mẫu số; bắt buộc preview.</p>
+<p><strong>Approval:</strong> cha có con hoạt động và đủ toàn bộ điều kiện → hệ thống lập submission và chuyển approval pending, task status vẫn doing, hiển thị “Chờ nghiệm thu”. Nếu thiếu kết quả bắt buộc thì chỉ ready, primary/manager/Admin bổ sung bằng “Gửi nghiệm thu”. Task không con luôn cần thao tác gửi rõ ràng. Reviewer/Admin duyệt → done/accepted; reject bắt buộc lý do → doing/rejected. Sau reject không tự gửi lại chỉ vì recompute; cần submission revision mới và thao tác gửi lại. 100% chỉ nói đầu việc đã thực hiện, không nói được duyệt. Reviewer không hợp lệ thì báo cần thay người, không fallback tự động.</p>
+<p><strong>Mặc định đề xuất:</strong> task mới dùng Manual; yêu cầu liên phòng vẫn Manual khi mới gửi chưa chọn reviewer, phòng nhận chọn Approval khi chỉ định reviewer hợp lệ; không tự cấp quyền cấu hình cho phòng gửi. Automatic là lựa chọn manager bật rõ. Dữ liệu cũ chạy <code>policyVersion=legacy-v1</code>: có con và reviewer dùng xác nhận hiện tại; có con không reviewer tự tính như hiện tại; không con giữ luồng đóng thủ công dù bản ghi có reviewer. Không áp điều kiện assignee mới hay tự gửi duyệt của modern-v2 lên task cũ. Chỉ chuyển sang modern-v2 bằng preview và thao tác quản lý riêng. Đây là thay đổi mặc định cho việc mới cần duyệt, không migration đổi hành vi việc cũ.</p>
+<h4>Điều kiện đóng chuẩn</h4>
+<p>Với <code>policyVersion=modern-v2</code>: <code>eligible = còn active + không deleted + assignee/primary hợp lệ + mọi con hoạt động done + không dependency chưa giải quyết + kết quả bàn giao đủ + policy assignee đạt + checklist bắt buộc đạt</code>. Legacy-v1 tiếp tục dùng guards hiện có cho đến khi được nâng chính sách rõ ràng.</p>
+<p>Với task không có con, bỏ điều kiện con nhưng vẫn phải có explicit completion command. Checklist/dependency chỉ được áp dụng khi tính năng bật và đã triển khai server. Manager đổi cấu hình không được tự bỏ qua điều kiện bàn giao liên phòng.</p>
+<h4>Quy tắc thống nhất về người làm và kết quả</h4>
+<ul>
+<li><code>primary</code> là chính sách trách nhiệm chung, không yêu cầu primary phải bấm thêm tick cá nhân trước khi đóng. Cha tổng hợp đủ điều kiện có thể tự đóng/gửi duyệt theo mode; task lá cần completion command của primary/manager/Admin.</li>
+<li><code>all</code> yêu cầu các assignee hiện hành đều submitted trong assignment cycle hiện tại. Khi primary bấm completion, server có thể ghi submission của chính primary trong cùng transaction, sau đó kiểm những người còn lại; manager/Admin không được tự đánh dấu submitted thay người khác. Nếu chưa đủ, trả blocker trước khi ghi bất kỳ thay đổi nào.</li>
+<li>Kết quả cha tổng hợp mặc định là bản tổng hợp có nguồn từ kết quả con và link con theo quyền; server sinh bản tóm tắt, không giả chữ ký bàn giao của primary. Nếu workflow yêu cầu báo cáo riêng của cha, phải nhập báo cáo trước; đủ con nhưng thiếu báo cáo không được tự đóng. Cờ <code>requiresOwnResult</code> do workflow policy quản lý, mặc định false cho cha tổng hợp, true cho task lá liên phòng.</li>
+<li>Khi cha tự hoàn thành, audit ghi <code>source=system</code>, <code>initiatedById</code> là actor gây thay đổi con, <code>completedById=null</code> và <code>automatic=true</code>; không trình bày actor đó là người duyệt. Handover có provenance từ các task con.</li>
+<li>Modern-v2 không tự đóng khi thiếu primary/assignee hợp lệ; việc này khác legacy-v1 vốn có thể có cha chưa phân công. UI phải hiện policy đang áp dụng khi nâng chính sách có thể làm thay đổi readiness.</li>
+</ul>
+<h4>Tạo và vô hiệu hóa chu kỳ nghiệm thu</h4>
+<p>Cha Approval có con chuyển từ chưa eligible sang eligible lần đầu → tạo một pending cycle bằng hệ thống. Nếu đang pending/accepted không tạo thêm cycle khi sửa priority, comment hay refresh. Task lá gửi thủ công; cha thiếu báo cáo riêng gửi sau khi bổ sung báo cáo. Sau rejected hoặc invalidated, chỉ một completion command gửi lại với submission revision mới được tạo cycle mới; recompute đơn thuần không làm mất lý do từ chối.</p>
+<p>Submission chứa phiên bản tiêu chí, kết quả và mọi con được nghiệm thu. Reopen con, thay kết quả/báo cáo, assignee, mode, reviewer, required checklist hoặc dependency hard làm submission cũ mất hiệu lực. Deadline/priority/comment không đổi output nên không vô hiệu mặc định, trừ workflow đánh dấu là acceptance criterion. Nếu predecessor bị mở lại sau khi successor done, giữ kết quả successor trong lịch sử, mở lại successor và ancestors, invalidate approval; không tự đóng lại successor khi predecessor hoàn thành lần nữa, cần explicit resubmit/recomplete. Đây là chính sách ADIGO được đề xuất, chưa có trong repo.</p>
+<p>Reviewer không được là bất kỳ active assignee nào của cùng task trong modern-v2 khi <code>allowSelfApproval=false</code>; Admin cũng chịu guard này. Admin chỉ bypass khi policy đã bật ngoại lệ có lý do và audit, không có override ngầm. Legacy-v1 không bị thay đổi quyền duyệt trong migration.</p>
+<p>Role được hợp khi một người có nhiều vai trò, nhưng guard cấm luôn ưu tiên hơn quyền cho phép: Admin cũng không duyệt cycle stale hoặc tự duyệt trái policy. <code>ready</code> là approvalState chỉ của mode Approval; Manual dùng readiness để hiện đủ điều kiện nhưng approvalState vẫn none. Người cùng thực hiện có thể rút submission của chính mình khi task chưa done và làm pending mất hiệu lực; task done phải được primary/manager/Admin reopen trước, không cho co-assignee sửa submission để mở lại task ngầm.</p>
+<h4>State transitions</h4>
+<ul>
+<li>todo → doing: primary/manager/Admin bắt đầu; co-assignee chỉ cập nhật phần mình, service có thể đưa task từ todo sang doing khi có lần bắt đầu đầu tiên.</li>
+<li>todo/doing → waiting: primary/manager/Admin, bắt buộc waitingReason. Blocked bởi dependency là cờ tính riêng, không ghi đè lý do chờ.</li>
+<li>waiting → doing: người có quyền tiếp tục; xóa lý do chờ hiện hành, giữ audit.</li>
+<li>todo/doing/waiting → done: chỉ completion command, kiểm eligible và mode; Approval cần decision accepted đúng revision.</li>
+<li>done → doing hoặc todo: explicit reopen đúng quyền, xóa mốc hoàn thành hiện hành, tăng completion cycle, vô hiệu phê duyệt cũ; giữ handover/activity.</li>
+<li>archived/deleted: không đổi nghiệp vụ; restore có kiểm scope/cha và tính lại.</li>
+</ul>
+<p>Đối với task tổng hợp, auto/approval có thể tính todo/doing từ con như cũ; manual giữ trạng thái người quản lý chọn nhưng không được done khi còn con mở. Không cho status label tùy ý từ client; cấu hình workflow được Admin quản lý, statusId ánh xạ semantic todo/doing/waiting/done để guard không phụ thuộc nhãn hiển thị.</p>
+<h3>Tiến độ</h3>
+<p>Tách <code>executionProgress</code>, <code>status</code>, <code>approvalState</code> và <code>assigneeSubmission</code>. Không dùng phần trăm làm nguồn duy nhất quyết định done. Progress con và tiến độ cá nhân là hai khái niệm riêng.</p>
+<ul>
+<li><strong>Count mặc định:</strong> <code>100 × số con trực tiếp done / số con trực tiếp hoạt động</code>. Ví dụ 2 done, 1 doing, 2 todo → 40%, không cộng 50% tùy ý cho doing. UI hiện thêm x/y và tiến độ bên trong từng con có hậu duệ.</li>
+<li><strong>Weighted:</strong> <code>100 × Σ(weight_i × done_i) / Σweight_i</code>; weight hữu hạn &gt;0, không tự trộn đơn vị. Ví dụ weight [5,1,2,1,1], hai con đầu done → 60%. Con chưa done đóng góp 0 kể cả có progress bên trong; ghi rõ đây là milestone progress.</li>
+<li><strong>Estimate:</strong> cùng công thức weighted với estimateMinutes &gt;0 cho mọi con tham gia. Không đủ estimate → lỗi cấu hình hoặc đề nghị quay về count, không bỏ qua những con thiếu giá trị. Time tracked không phải phần trăm hoàn thành.</li>
+<li><strong>Manual:</strong> giá trị 0–100 có lý do/actor, chỉ manager/primary theo quyền; không tự đổi status hoặc bypass con/dependency.</li>
+<li><strong>Hybrid, giai đoạn sau:</strong> các hệ số α,β,γ ≥0 tổng bằng 1 cho milestones/checklist/manual contribution; công bố mẫu số, không tính một output vừa checklist vừa subtask. Không bật trong scope đầu vì tăng chi phí giải thích.</li>
+</ul>
+<p>Không con: executionProgress của task độc lập là 100 khi done, 0 nếu chưa done, trừ manual progress được bật. Task từng có con mà archive/move mất toàn bộ con giữ status hiện tại và chuyển sang quy tắc task độc lập; không tự đóng. Bộ đếm công suất tính mỗi task lá/độc lập một lần; workload nhiều assignee cần phân bổ effort/share, không nhân tổng công việc theo số người.</p>
+<h3>Ngoại lệ và tác động</h3>
+<ul>
+<li>Cha còn con mở: chặn done ở mọi điểm vào, trả danh sách/số còn lại theo quyền; không chỉ disable nút.</li>
+<li>Cha done muốn thêm con: yêu cầu reopen riêng, không âm thầm mở cha trong Create.</li>
+<li>Con reopen: invalidate approval và mở lại mọi ancestor done từ dưới lên; ghi một sự kiện mỗi lần trạng thái thực sự đổi, không xóa lịch sử. Sau khi xong lại, approval phải tạo cycle mới.</li>
+<li>Archive/delete/move con làm cha đủ điều kiện: preview tại server gắn revision; confirm đúng revision; tính lại cả cha nguồn và đích. Không còn con thì giữ status, không tự đóng.</li>
+<li>Nhiều cấp: cấm self-parent, cycle, vượt depth/descendant limit; không được cùng một task xuất hiện hai lần trong path. Tính bottom-up và chỉ truyền thay đổi lên ancestor, không phát command xuống con để tránh vòng lặp.</li>
+<li>Move/convert: bản đầu chỉ cùng phòng phụ trách và cùng requesting department; task/cha liên quan chưa done/archive/deleted. Khác scope phải qua workflow riêng ở giai đoạn sau. ID, file, comment và audit của con được giữ; không sao chép thành bản mới.</li>
+<li>Delete: đề xuất soft delete khác archive; bản đầu chặn xóa cha còn con hoạt động, preview các dependency; không hard delete. Cascade cả subtree chỉ là mở rộng sau, không tự thêm vào bản đầu. Restore giữ ID/lịch sử và kiểm cha còn tồn tại, scope cùng như trước.</li>
+<li>Checklist không con: checklist bắt buộc chặn completion; checklist không tự tạo thêm task trong số liệu. Checklist thay đổi sau accepted làm approval invalidated.</li>
+<li>Dependency: hard finish-to-start chặn bắt đầu, gửi kết quả và đóng khi predecessor chưa done; thông báo blocked riêng. Nếu thêm cạnh lúc successor đang doing, giữ status và dữ liệu nhưng đánh blocked, không cho tiếp tục transition tới done. Cấm cycle trong đồ thị dependency lẫn ancestor-descendant dependency để tránh deadlock nghiệp vụ; move phải kiểm lại cả hai loại quan hệ.</li>
+<li>Hạn con sau cha: cho lưu với cảnh báo manager; không tự kéo hạn cha. Con quá hạn làm cờ <code>hasOverdueChildren</code>, khác cờ cha overdue. Due date đổi không tự đổi progress hay assignees.</li>
+<li>Đổi completionMode/progressMode: manager/Admin, reason + preview + expectedVersion; task done phải reopen trước. Chuyển Approval cần reviewer hợp lệ; Approval → Auto có thể đóng ngay khi eligible nên cần xác nhận rõ. Phê duyệt cũ không được tái dùng khi đổi mode/đổi assignment/hierarchy/tiêu chí đầu ra.</li>
+<li>Reviewer reject: giữ executionProgress 100 nếu chưa mở lại đầu việc, hiển thị rejected + lý do; muốn sửa thực chất thì reopen con hoặc cập nhật kết quả, tạo submission revision mới, không biến rejected thành todo để che mất trạng thái.</li>
+</ul>
+</article>
+<article id="doc-04" class="document"><p><a href="#top">Về mục lục</a> · <a href="04-technical-design.md">Nguồn Markdown</a></p><h2>Thiết kế kỹ thuật Task và Subtask ADIGO</h2>
+<p>Đề xuất chưa triển khai. Tái sử dụng Next Route Handlers, MongoDB replica set, GridFS, auth và transaction hiện có. Chưa có thay đổi schema/API nào được áp dụng trong đợt thiết kế.</p>
+<h3>Mô hình dữ liệu</h3>
+<p>Giữ chung collection <code>tasks</code> với <code>parentTaskId</code> vì con có cùng vòng đời, quyền, file và hoạt động như task độc lập. Tách collection subtasks sẽ nhân đôi API/validator, khiến chuyển con thành task phải đổi định danh hoặc di chuyển dữ liệu. Chỉ tách các quan hệ có cardinality/lịch sử lớn, không tách loại công việc.</p>
+<h4>Tasks và hierarchy</h4>
+<p>Giữ <code>_id</code>, <code>title</code>, <code>description</code>, <code>owningDepartmentId</code>, <code>requestingDepartmentId</code>, <code>createdById</code>, <code>assigneeId</code>, <code>participantIds</code>, ngày/priority/status và archive hiện tại. Bổ sung theo giai đoạn:</p>
+<ul>
+<li><code>schemaVersion:2</code>, <code>version:int64</code> tăng trên mọi thay đổi nghiệp vụ; <code>hierarchyVersion</code> tiếp tục làm khóa ancestor, không dùng nó thay version hiển thị.</li>
+<li><code>parentTaskId:ObjectId|null</code>, <code>rootTaskId:ObjectId</code>, <code>ancestorIds:ObjectId[]</code>, <code>depth:int</code>, <code>sortKey:string</code>. <code>parentTaskId</code> là nguồn chuẩn, path/root/depth là cache được sửa trong transaction. Missing parent ở bản cũ nghĩa task độc lập.</li>
+<li><code>assigneeIds:ObjectId[]</code>, <code>primaryAssigneeId:ObjectId|null</code>, <code>assigneeCompletionPolicy:primary|all</code>. Trường <code>assigneeId</code> legacy là projection của primary, không phải nguồn ghi thứ hai.</li>
+<li><code>policyVersion:legacy-v1|modern-v2</code>, <code>completionMode:manual|automatic|approval</code>, <code>progressMode:count|weighted|estimate|manual</code>, <code>workflowId</code>, <code>workflowVersion</code>, <code>statusId</code>; giữ semantic <code>status</code> 4 giá trị để tương thích truy vấn cũ trong migration. <code>requiresOwnResult</code> lấy từ workflow version, không để client bỏ qua báo cáo bắt buộc.</li>
+<li><code>activeChildCount</code>, <code>completedChildCount</code>, <code>executionProgress</code>, <code>weight</code>, <code>estimateMinutes</code>, <code>manualProgress</code>, <code>computedAt</code>, <code>computedVersion</code>.</li>
+<li><code>approvalState:none|ready|pending|accepted|rejected|invalidated</code>, <code>reviewerId</code>, <code>approvalCycle</code>, <code>submissionRevision</code>, <code>reviewAcceptedAt/ById</code> tương thích hiện tại.</li>
+<li><code>needsAssignment</code>, <code>reviewerUnavailable</code>, <code>completedAt/ById</code>, <code>completionCycle</code>, <code>deletedAt/ById</code>; <code>archivedAt</code> và <code>deletedAt</code> có ý nghĩa khác nhau.</li>
+</ul>
+<p>Không nhúng toàn bộ cây hoặc lịch sử vô hạn vào task. Bắt đầu với trường tùy chọn và DTO adapter; chỉ bật nhiều cấp sau khi mọi reader hiểu cached path và leaf metrics.</p>
+<h4>Các collections liên quan</h4>
+<ul>
+<li><code>task_assignments</code>: taskId, userId, role primary/co-assignee/participant, assignedById, assignedAt, removedAt, removedById, reason, assignmentCycle, submissionState, submittedAt, resultRevision. Một assignment active cho mỗi <code>(taskId,userId)</code>, không có cùng một người ở hai role hoạt động. Primary cũng là một assignee; <code>assigneeIds</code> gồm role primary và co-assignee. Nguồn chuẩn vai trò nằm đây sau cutover; arrays trên tasks là read projection cập nhật cùng transaction.</li>
+<li><code>task_activities</code>: giữ collection hiện tại; mở rộng eventId, aggregateVersion, operation, actor, source, before/after, reason, causationId, cycle. Append-only. Status/assignment history là các event lọc từ collection này, không cần nhân đôi nhiều bảng lịch sử.</li>
+<li><code>task_approvals</code>: taskId, cycle, submissionRevision, reviewerId, state, requestedAt, decidedAt/ById, reason; không tái dùng quyết định của cycle cũ.</li>
+<li><code>task_dependencies</code>: predecessorId, successorId, type finish_to_start, hard, createdById/At, removedAt; graph revision/lock theo scope. Không cho cross-department ở bản đầu.</li>
+<li><code>task_checklists</code>: taskId, itemId, text, required, checked, assigneeId?, checkedById/At, position, version. Checklist không biến thành task/assignee completion ngầm.</li>
+<li><code>task_watchers</code>: taskId, userId, preferences, createdAt; unique task/user. Không cấp ACL.</li>
+<li><code>task_custom_field_definitions</code>: department/workflow scope, key, type, validation, required, version. <code>task_custom_field_values</code>: taskId, definitionId, definitionVersion, value; chỉ mở sau core workflow.</li>
+<li><code>task_comments</code>, <code>attachments</code>, GridFS và <code>notifications</code>: tái sử dụng, thêm cursor paging và eventId liên kết khi cần.</li>
+<li><code>task_operations</code>: actorId, requestId, payloadHash, route/command, result summary, taskId/version, createdAt; dùng idempotency cho toàn bộ command mới.</li>
+<li><code>task_outbox</code>: eventId, recipientId, channel, type, payloadRef, state, attempts, nextAttemptAt, sentAt. Chỉ cần khi gửi ngoài transaction hoặc scheduler; thông báo in-app vẫn có thể ghi đồng transaction như hiện tại.</li>
+<li><code>task_workflows</code>: danh sách trạng thái id/label/semanticCategory, allowed transitions, default mode, policyVersion, hierarchy limits. Admin cấu hình; không để client tự định nghĩa enum.</li>
+<li><code>task_assignment_requests</code>: requester, target user, taskId/version, reason, pending/approved/rejected, decidedBy/At cho đề nghị chuyển việc.</li>
+<li>Kết quả bàn giao tăng dài: chuyển <code>handovers</code> embedded sang <code>task_handovers</code> theo đợt migration riêng, giữ eventId và original timestamps; không bắt buộc chuyển trong Phase 1.</li>
+</ul>
+<h3>Invariants và concurrency</h3>
+<p>Mỗi command đi qua thứ tự: xác thực → parse DTO nghiêm ngặt → transaction → khóa scope/user/root cần thiết → đọc lại quyền/phiên bản → validate invariants → ghi task/projections → tính ancestor bottom-up → audit/notification/operation → commit → phản hồi.</p>
+<ul>
+<li>Dùng <code>session.withTransaction</code>, retry có giới hạn cho transient conflict; hết retry trả 409 có mã rõ. Không gọi email/webhook trong callback transaction vì callback có thể chạy lại.</li>
+<li>Dùng một thứ tự khóa toàn cục: khóa workflow/scope-graph theo scope ID → các user theo ID → các hierarchy root theo ID → các task còn lại theo ID. Mọi command, kể cả deactivate/bulk/approval/dependency, dùng thứ tự này; command không cần lớp nào thì bỏ qua lớp đó, không đảo lớp. Khám phá tập khóa trước transaction; sau khi lấy khóa đọc lại parent/root/version, nếu tập khóa thay đổi phải hủy và retry từ đầu. Move giữa hai cây khóa hai root theo ID; không lấy user lock sau root lock.</li>
+<li><code>expectedVersion</code> chống ghi đè giữa hai dialog; update với filter <code>_id,version</code>, không match thì 409. Root lock giải quyết consistency cây; optimistic version giải quyết ý định người dùng, không thay thế nhau.</li>
+<li>Cấm self-parent/cycle bằng ancestor check và xác minh lại đường cha trong transaction. Depth mới = depth cha mới + 1; tính chiều cao subtree để kiểm maxDepth, không chỉ kiểm node di chuyển.</li>
+<li>Chặn duplicate active assignments bằng unique partial index; guard đúng một primary nằm trong active assignees được service kiểm trong transaction, không thể chỉ dựa unique multikey arrays.</li>
+<li>Dependency thêm edge khóa graph scope revision, kiểm path successor→predecessor bằng truy vấn bounded traversal; hai cạnh đối nghịch đồng thời phải conflict. Không dùng root lock của cây để giả vờ bảo vệ được mọi dependency graph.</li>
+<li>Derived fields không nhận từ client. Recompute cùng transaction cho subtree giới hạn; subtree lớn chưa đủ ngân sách transaction thì từ chối có hướng dẫn, không ghi nửa cây rồi tính async mà vẫn báo hoàn tất.</li>
+<li>Một lần done mỗi cycle dùng event uniqueness; reopen tăng cycle. Outbox/event handler chỉ phát thay đổi semantic thực sự; causationId và visited set chặn vòng lặp automation. Không chạy pipeline “đổi cha → tự đổi con → đổi cha”.</li>
+</ul>
+<h3>Indexes và truy vấn</h3>
+<p>Giữ indexes hiện có: tasks theo parent/archive/createdAt, assignee, participant, owning/requesting department, dueDate; notifications event/recipient unique; task_operations actor/request unique; activities task/createdAt; files task/state.</p>
+<p>Đề xuất index thêm, đo <code>explain</code> trước rollout:</p>
+<ul>
+<li>tasks <code>{parentTaskId:1,deletedAt:1,archivedAt:1,sortKey:1,_id:1}</code> cho con trực tiếp; <code>{rootTaskId:1,depth:1}</code> và <code>{ancestorIds:1}</code> khi bật nhiều cấp.</li>
+<li>tasks <code>{owningDepartmentId:1,archivedAt:1,deletedAt:1,status:1,dueDate:1,_id:1}</code> và assigneeIds/archived/due theo query thật. Không tạo compound index có hai trường array độc lập.</li>
+<li>assignments unique partial <code>(taskId,userId)</code> khi removedAt=null; unique partial taskId khi role=primary và removedAt=null; <code>(userId,removedAt,taskId)</code> cho My tasks. Chuyển primary/co-assignee đóng interval cũ và mở interval mới trong transaction; lịch sử không mất.</li>
+<li>approvals unique <code>(taskId,cycle)</code>; activities <code>(taskId,createdAt,_id)</code> cursor và unique <code>(eventId,taskId,type)</code> khi type được định nghĩa đủ phân biệt.</li>
+<li>dependencies unique partial <code>(predecessorId,successorId,type)</code> active; indexes hai chiều. Watchers unique task/user; outbox unique event/recipient/channel và state/nextAttemptAt.</li>
+</ul>
+<p>List query trả một page tasks cộng ancestor context theo <code>$in</code>/batch có kiểm scope; không fetch từng child từ client để dựng 50 hàng. Detail tải con trực tiếp theo cursor; user names lấy batch <code>$in</code> hoặc directory cache không nhạy cảm. <code>$graphLookup</code> chỉ khi bật nhiều cấp, có maxDepth và giới hạn số node; vẫn lọc quyền, không trả toàn graph rồi giấu tại UI. Count và cursor phải dùng cùng filter/snapshot hợp lý; ancestor context không cộng vào totals.</p>
+<h3>Hợp đồng API đề xuất</h3>
+<p>Đường dẫn bên dưới thuộc ADIGO, không phải ClickUp. API hiện có giữ adapter; endpoint mới chưa tồn tại. Mutation mới dùng <code>requestId:UUID</code> và <code>expectedVersion</code> trừ create. Idempotency lặp cùng payload trả kết quả cũ; cùng key khác payload trả 409. Success gồm <code>task</code>, <code>version</code>, <code>affectedAncestors</code>, <code>eventId</code>, <code>warnings</code> khi phù hợp.</p>
+<h4>Hợp đồng dùng chung cho mọi mutation</h4>
+<p>JSON không parse được/ID hay cursor sai format → 400; field ngoài allowlist hoặc sai schema/nghiệp vụ → 422; chưa đăng nhập → 401; task không tồn tại hoặc ngoài canView → cùng 404; đã xem được nhưng thiếu quyền thao tác → 403; stale version/policy/payloadHash → 409. Không đủ điều kiện trả 422 kèm <code>code</code>, <code>fieldErrors</code>, <code>remainingCount</code>/<code>blockers</code> đã lọc quyền. Lỗi hạ tầng trả 503/500 và correlationId, không trả stack. Duplicate key do replay cùng request trả kết quả cũ, không biến thành 409 tổng quát; conflict assignment thực sự trả 409.</p>
+<p>Mọi mutation nghiệp vụ dùng transaction và append audit kể cả thay role, mode hoặc hierarchy; chỉ sự kiện thực thay đổi mới tạo notification. Actor/creator/assignedBy/timestamp lấy server. Response không trả tên/title/id của blocker ngoài quyền.</p>
+<h4>Danh mục endpoint và hành vi</h4>
+<ol>
+<li><strong>POST <code>/api/tasks</code> — Create Task/Subtask.</strong> Body <code>{title,description,owningDepartmentId?,assigneeIds,primaryAssigneeId,participantIds,startDate?,dueDate,priority,parentTaskId?,completionMode?,reviewerId?,attachmentIds?,requestId}</code>. Task độc lập bắt buộc owningDepartmentId; con lấy scope từ cha, client có gửi giá trị khác thì từ chối, không chuyển scope âm thầm. Response 201 DTO; replay 200. Quyền create như cũ, nếu con cần canManage cha; employee không tự đặt mode/reviewer ngoài workflow mặc định. Validate ngày/role/scope/depth/cha mở. Transaction tạo task/assignment/file/audit, recompute cha. Event task.created và assignment.added; recipient đúng scope.</li>
+<li><strong>PATCH <code>/api/tasks/:id</code> — Update task/subtask metadata.</strong> Body <code>{expectedVersion,title?,description?,startDate?,dueDate?,priority?,requestId}</code>. Manager/Admin. Không cho parent/status/role/progress derived đi qua metadata handler. 200 DTO; audit từng thay đổi, deadline.changed notify người liên quan; khóa root khi thay đổi tiêu chí ảnh hưởng cha.</li>
+<li><strong>GET <code>/api/tasks/:id</code> — Detail.</strong> Response task, capabilities, readiness, parent summary, children page, attachments summary; canView; không transaction ghi/không side effects. Comments/activity có cursor riêng để không tăng response vô hạn.</li>
+<li><strong>GET <code>/api/tasks/:id/hierarchy?depth=1&amp;cursor=...&amp;limit=50</code> — Hierarchy.</strong> Response <code>{nodes,parentContext,nextCursor,version}</code>; depth &lt;= cấu hình và bounded total. Batch query theo quyền; không mutation/audit/notify. Không trả hidden parent title.</li>
+<li><strong>PUT <code>/api/tasks/:id/assignment</code> — Assign/Reassign/Add/Remove.</strong> Body <code>{assigneeIds,primaryAssigneeId,participantIds?,reason?,previewToken?,expectedVersion,requestId}</code> là tập cuối cùng, không mơ hồ add/rem. Manager/Admin; quyền delegated nếu bật sau. Validate active/cùng phòng/primary thuộc tập/không duplicate; done cần reopen. Transaction khóa user/root, lưu intervals cũ/mới, projection và invalidation approval. Events assignment.added/removed/primary.changed. Status giữ, readiness tính lại. 200 DTO + delta. Bỏ tất cả hoặc làm invalidate pending cần reason và preview token; đang doing/waiting/có submission thì reason bắt buộc.</li>
+<li><strong>POST <code>/api/tasks/:id/assignment-requests</code> và PATCH <code>/api/tasks/:id/assignment-requests/:requestId</code> — Đề nghị chuyển/duyệt.</strong> Request <code>{targetUserId,reason,expectedVersion,requestId}</code>; decision <code>{decision,reason?,expectedVersion,requestId}</code>. Assignee đề nghị, manager/Admin duyệt; pending không đổi assignment. Duyệt dùng chung assignment service trong transaction; log và notify người đề nghị/người nhận. Đề nghị stale phải duyệt lại, không âm thầm áp.</li>
+<li><strong>POST <code>/api/tasks/:id/status-transitions</code> — Change status.</strong> <code>{targetStatusId,waitingReason?,expectedVersion,requestId}</code>; chỉ transition cho phép. Primary/manager/Admin; co-assignee theo policy bắt đầu phần mình. Không nhận done qua đường này: gửi 422 USE_COMPLETION_COMMAND. Audit status.changed; notify theo preference.</li>
+<li><strong>POST <code>/api/tasks/:id/completion</code> — Complete/submit.</strong> <code>{result?,resultLinks?,attachmentIds?,expectedVersion,requestId}</code>. Primary/manager/Admin, guard eligible sau khi merge payload candidate và submission của chính primary nếu policy all; manager/Admin không submit thay người khác. Manual → done, automatic task độc lập → done, Approval → pending. Cha Approval có con đủ điều kiện có thể đã được hệ thống tạo pending theo quy tắc 03; request mới không tạo thêm cycle, trả 409 APPROVAL_ALREADY_PENDING nếu không phải replay. Ghi handover/submission revision, recompute ancestor, event task.completed hoặc approval.requested; không phát cả hai khi chỉ pending. 200 DTO/readiness.</li>
+<li><strong>POST <code>/api/tasks/:id/reopen</code> — Reopen.</strong> <code>{reason,expectedVersion,requestId}</code>. Primary/manager/Admin của task, kể cả con; invalidate approval/ancestors, clear current completedAt, giữ historical handover. 200 affectedAncestors; events task.reopened và approval.invalidated. Không tự mở task archive/deleted.</li>
+<li><strong>PUT <code>/api/tasks/:id/assignees/me/submission</code> — Phần việc cá nhân.</strong> <code>{state:active|submitted,result?,expectedVersion,requestId}</code>. Chỉ active assignee của chính user, không sửa hộ qua userId tùy ý. Transaction cập nhật assignment cycle, readiness; event assignee.submitted/reopened notify primary. Không tự coi đây là completion task.</li>
+<li><strong>PATCH <code>/api/tasks/:id/progress</code> — Manual progress/weights.</strong> <code>{manualProgress?,childWeights?,progressMode?,reason,expectedVersion,requestId}</code>. Manager/Admin, primary chỉ manual value nếu policy cho phép. Validate tổng/trọng số/estimate; không cho gửi executionProgress derived. Transaction recompute, audit progress.changed; không tự gửi completion/approval.</li>
+<li><strong>PUT <code>/api/tasks/:id/completion-policy</code> — Mode/policy/reviewer.</strong> <code>{completionMode,reviewerId?,assigneeCompletionPolicy,previewToken?,reason,expectedVersion,requestId}</code>. Manager/Admin. Done phải reopen. Preview nếu thay đổi đóng/invalidates; audit policy.changed, notify reviewer/primary khi cần.</li>
+<li><strong>POST <code>/api/tasks/:id/move</code> — Move/convert.</strong> <code>{newParentTaskId:ObjectId|null,expectedVersion,expectedSourceParentVersion?,expectedTargetParentVersion?,previewToken,reason,requestId}</code>. Null là convert trong API ADIGO này, không suy từ ClickUp API. Manager/Admin có quyền nguồn và đích; validate cùng owning/requesting scope, cycle/depth/active. Transaction khóa hai root, sửa subtree path, recompute cả hai phía, giữ ID/file/comments. Events task.moved/progress.changed; response affectedRoots.</li>
+<li><strong>POST <code>/api/tasks/:id/approval-decisions</code> — Approve/reject.</strong> <code>{cycle,submissionRevision,decision:accepted|rejected,reason?,expectedVersion,requestId}</code>. Reviewer hiện hành/Admin, reject phải reason; kiểm eligibility lại ngay khi duyệt. Transaction decision + done nếu accepted + recompute; event approval.accepted/rejected notify primary/assignees.</li>
+<li><strong>GET <code>/api/tasks/:id/activities?cursor=...&amp;limit=50</code>.</strong> canView hiện tại, response <code>{items,nextCursor}</code>. Lọc thứ tự ổn định createdAt/_id; không viết event vì đọc audit. History không cấp quyền xem nội dung tài liệu ngoài scope.</li>
+<li><strong>POST <code>/api/tasks/bulk-operations</code>.</strong> <code>{operation,items:[{taskId,expectedVersion}],payload,requestId}</code>. Giới hạn 50; bản đầu chỉ metadata deadline/priority và assignment trong một scope, không gồm move/delete/status/complete. Preflight toàn bộ quyền; một item lỗi rollback cả batch. Response affected DTOs; audit/notify từng task với causationId chung và dedup recipient digest. Không vừa báo partial success vừa ngầm dùng atomic.</li>
+<li><strong>GET <code>/api/notifications?cursor=...</code> và PATCH <code>/api/notifications/:id</code>.</strong> Dùng luồng hiện có, bổ sung cursor. GET/mark-read đều kiểm recipient/canView hiện tại; trả items/unread/cursor. Mark-read idempotent, không gửi notification của notification.</li>
+<li><strong>POST <code>/api/tasks/:id/impact-preview</code>.</strong> <code>{operation,payload,expectedVersion}</code>. Chỉ người có quyền thực hiện; response token gắn actor/target versions/payloadHash/expiry + tác động đóng cha, đổi scope, invalidates. Không ghi thay đổi nghiệp vụ; token stale/expired → 409 khi command lưu.</li>
+<li><strong>POST <code>/api/tasks/:id/archive</code> và POST <code>/api/tasks/:id/restore</code>.</strong> <code>{expectedVersion,previewToken?,reason?,requestId}</code>. Manager/Admin, restore cha trước con; giữ guard cha còn con hoạt động. Transaction recompute, audit/notify tác động thực tế. Legacy PATCH archived gọi chung service.</li>
+<li><strong>DELETE <code>/api/tasks/:id</code> — Soft delete giai đoạn sau.</strong> Body <code>{expectedVersion,previewToken,reason,requestId}</code>. Manager/Admin; chặn cha còn con hoạt động, preview dependency; transaction deletedAt + recompute + audit. 200 tombstone/ancestors; không xóa GridFS/activity. Restore dùng command trên có loại restore deleted rõ ràng.</li>
+<li><strong>POST <code>/api/tasks/:id/dependencies</code> và DELETE <code>/api/tasks/:id/dependencies/:edgeId</code>.</strong> <code>{predecessorId,type,hard,reason?,expectedVersion,requestId}</code>. Manager/Admin của cả hai task cùng scope. Khóa graph + cycle check; recompute blocked/readiness; audit dependency.added/removed, notify assignee bị ảnh hưởng; không tự dời hạn.</li>
+<li><strong>POST <code>/api/tasks/:id/duplicate</code>.</strong> <code>{includeSubtasks,includeAssignments,includeAttachments:false,dueDate,requestId}</code>. Manager/Admin hoặc creator có create permission với nguồn đang được xem. Mặc định không copy activity/approval/submission/result/file; creates new IDs, todo, creator actor. Đệ quy bounded trong cùng transaction; log source ID; chỉ notify người được giao mới sau commit.</li>
+</ol>
+<ol>
+<li><strong>GET <code>/api/work</code> — List/query.</strong> Giữ endpoint hiện tại, thêm <code>{view,modes:collapsed|expanded|separate,involvement:assigned|primary|co|participating|watching,q,status,department,sort,group,cursor,limit}</code> dưới dạng query string. <code>assigned</code> giữ nghĩa tất cả active assignees; primary/co là bộ lọc mới, participant/watch không đổi nghĩa. canView được áp trước pagination/count. Response <code>{tasks,parentContext,groups,stats,total,nextCursor,queryRevision}</code>; parent context không cộng vào total. Limit 1–100, mặc định 50; cursor gắn actor/scope/filter/sort/policy revision và stable tie-break <code>_id</code>; đổi filter phải reset cursor. Không side effects/audit/notify. Chưa có snapshot lịch sử thì queryRevision thay đổi trả 409 CURSOR_STALE, không hứa snapshot liên trang không có thật.</li>
+<li><strong>PUT <code>/api/tasks/:id/participants</code> — Sửa người tham gia.</strong> <code>{participantIds,expectedVersion,requestId}</code>; canManage; active/cùng phòng/không trùng assignee, tối đa 50. Transaction update assignments/projection, audit participant.added/removed; notify người thêm, người bỏ chỉ nếu còn quyền. Không đổi assignee submission/progress/approval vì đây không là người chịu trách nhiệm.</li>
+<li><strong>GET/PUT <code>/api/tasks/:id/watchers/me</code> — Theo dõi của tôi.</strong> GET trả setting hiện tại; PUT <code>{following,events,requestId}</code> cho user active có canView, không dùng task expectedVersion vì không sửa task nghiệp vụ. Transaction watcher + operation + audit watcher subscription; không gửi thông báo tự theo dõi; không cho payload userId để đăng ký thay người khác. Event allowlist rõ, không để người xem tự chọn loại nội dung ngoài scope.</li>
+<li><strong>GET/POST <code>/api/tasks/:id/checklist</code> và PATCH/DELETE <code>/api/tasks/:id/checklist/:itemId</code>.</strong> Manager/Admin thêm/sửa requirement/xóa; primary có thể tick, co chỉ tick mục được giao mình. Payload create <code>{text,required,assigneeId?,position?,expectedVersion,requestId}</code>, tick/update <code>{checked?,text?,required?,expectedVersion,requestId}</code>. Guard role theo field, không cho co sửa required. Transaction checklist + task version + approval invalidation khi thay acceptance criterion; audit item/actor/before/after, notify primary khi readiness đổi. Không hard delete task; item xóa lưu tombstone/audit. GET canView và cursor, không side effect.</li>
+<li><strong>GET/POST <code>/api/tasks/:id/comments</code> — Trao đổi.</strong> Giữ POST hiện có <code>{body}</code> qua adapter, v2 thêm requestId; GET <code>{cursor,limit}</code>. canView + active task; input body 1–5000. Ghi transaction comment/operation, trả 201 hoặc replay 200; audit comment.created với content reference, notify watchers đăng ký comments, không invalidate output. Không sửa/xóa comment trong scope đầu.</li>
+<li><strong>POST <code>/api/tasks/:id/policy-upgrade</code> — Chuyển legacy-v1 sang modern-v2.</strong> <code>{targetPolicyVersion:modern-v2,expectedVersion,previewToken,reason,requestId}</code>; canManage; task chưa done/archive/deleted, invariant mới đủ hoặc trả danh sách field cần xử lý. Transaction policy + mapped workflow + readiness + audit; không nâng hàng loạt qua backfill. Nếu preview dự kiến auto-close/auto-submit phải confirm đúng versions của các task liên quan. Không có downgrade command khi đã ghi dữ liệu modern-only.</li>
+<li><strong>GET <code>/api/task-options</code> và GET <code>/api/review-queue</code>.</strong> Options <code>{departmentId,parentTaskId?,q,cursor,limit}</code> trả danh sách assignee/reviewer/parent candidates theo mục đích và quyền manager/employee; không trả email hoặc toàn bộ directory không cần thiết. Parent candidates loại done/archive/depth sai. Queue chỉ reviewer hiện hành hoặc Admin, lọc scope trước count/pagination; response pending cycles với submissionRevision, không lộ phòng khác cho reviewer thường. Hai GET không có transaction ghi/audit/notify.</li>
+<li><strong>POST <code>/api/admin/users/:id/task-handoff</code> — Chuyển giao và vô hiệu hóa.</strong> Body <code>{userVersion,mode:handoff|emergency,targetAssignments?,reviewerReplacements?,reason,requestId}</code>; chỉ Admin. Bình thường preview toàn bộ việc mở/role và chuyển giao bounded cùng scope; nếu quá transaction budget thì chia batch được checkpoint, chưa deactivate cho đến khi hoàn tất. Emergency khóa user trước trong transaction ngắn, revoke sessions, audit và thông báo manager; task flags có thể materialize sau nhưng mọi command kiểm user active trực tiếp ngay từ commit khóa, không chờ job. Response phân biệt <code>completed</code> với <code>handoffPending</code>; không tuyên bố chuyển giao xong khi mới khóa account.</li>
+</ol>
+<p>Custom field/time-entry APIs là roadmap ngoài implementation scope đầu: khi bật phải có endpoint/validation riêng; hiện gửi field chưa triển khai trả 422 FEATURE_NOT_ENABLED, không bỏ qua im lặng.</p>
+<h4>DTO, preview và compatibility</h4>
+<p>Task DTO chung gồm <code>id</code>, <code>version</code>, <code>policyVersion</code>, <code>statusId</code>, <code>statusCategory</code>, <code>completionMode</code>, <code>approvalState</code>, <code>approvalCycle</code>, <code>submissionRevision</code>, <code>executionProgress</code>, <code>progressMode</code>, <code>primaryAssigneeId</code>, <code>assigneeIds</code>, <code>participantIds</code>, <code>parent</code>, <code>childCounts</code>, <code>readiness:{eligible,blockers,requiresOwnResult}</code>, <code>capabilities</code> và <code>updatedAt</code>. Không dùng <code>completedById</code> của actor con để giả quyết định người duyệt. Preview response có <code>operation</code>, <code>affectedTasks</code>, <code>before/after</code> counts/readiness, <code>requiresConfirmation</code> và token ký server hết hạn sau 5 phút, gắn actor/session/payload hash/versions; client không tự tạo token. Token chỉ xác nhận tác động, không thay authorization hoặc expectedVersion.</p>
+<p>Ví dụ Create Subtask modern-v2 (ID minh họa, không phải dữ liệu thật):</p>
+<pre><code>{&quot;title&quot;:&quot;Thiết kế mẫu nội dung&quot;,&quot;parentTaskId&quot;:&quot;aaaaaaaaaaaaaaaaaaaaaaaa&quot;,&quot;assigneeIds&quot;:[&quot;bbbbbbbbbbbbbbbbbbbbbbbb&quot;],&quot;primaryAssigneeId&quot;:&quot;bbbbbbbbbbbbbbbbbbbbbbbb&quot;,&quot;participantIds&quot;:[],&quot;dueDate&quot;:&quot;2026-12-01&quot;,&quot;priority&quot;:&quot;normal&quot;,&quot;attachmentIds&quot;:[],&quot;requestId&quot;:&quot;d115527a-fbf2-4b42-9716-292b90b51056&quot;}</code></pre>
+<p>Ví dụ assignment đang thực hiện:</p>
+<pre><code>{&quot;assigneeIds&quot;:[&quot;cccccccccccccccccccccccc&quot;],&quot;primaryAssigneeId&quot;:&quot;cccccccccccccccccccccccc&quot;,&quot;reason&quot;:&quot;Bàn giao cho người tiếp nhận&quot;,&quot;expectedVersion&quot;:7,&quot;requestId&quot;:&quot;44e9048f-3f58-4c23-9fb5-5293f35991ae&quot;}</code></pre>
+<p>Ví dụ stale version response HTTP 409:</p>
+<pre><code>{&quot;error&quot;:{&quot;code&quot;:&quot;VERSION_CONFLICT&quot;,&quot;message&quot;:&quot;Công việc đã thay đổi. Hãy kiểm tra dữ liệu mới.&quot;,&quot;currentVersion&quot;:8,&quot;retryable&quot;:false,&quot;correlationId&quot;:&quot;audit-example&quot;}}</code></pre>
+<p>Legacy API vẫn nhận PATCH status/assignee/archived như hiện tại qua compatibility adapter; mỗi field được chuyển về command domain tương ứng, không giữ một đường ghi bỏ qua guards. Request trộn metadata + assignment/status bị từ chối ở v2; client legacy chỉ được giữ tổ hợp đã hỗ trợ và xử lý atomic có test riêng. Form v1 không bắt buộc expectedVersion trước cutover, nhưng adapter vẫn dùng root lock và ghi audit; sau cutover mutation v2 bắt buộc version. Cho phép retry chỉ transient conflict; với intent stale phải trả conflict để người dùng xem lại, không tự lấy version mới rồi ghi đè.</p>
+<p>Chỉ hash payload đã chuẩn hóa gồm actor/command/target/body có ý nghĩa và expectedVersion; không hash requestId, transport headers hay field server tự sinh. PreviewToken được kiểm riêng, payload hash dùng preview input semantics, không phụ thuộc chữ ký/token timestamp. Operation lookup phải kiểm actor còn quyền trước trả dữ liệu replay. Khóa toàn cục theo policy/scope → users → roots → tasks áp dụng cả dispatch adapter và event-driven recompute.</p>
+<h4>Propagation và giới hạn xử lý</h4>
+<p>Dependency hard finish-to-start chặn bắt đầu lẫn completion; khi predecessor reopen, thu thập successor cần invalidate/reopen và ancestors trong cùng impact plan, chống lặp bằng visited IDs. Move kiểm dependency/ancestor relation mới dưới scope graph lock, không chỉ kiểm tree cycle. Ngân sách một command đề xuất tối đa 500 task bị ảnh hưởng và 50 assignees/task; vượt ngân sách trả 422 IMPACT_LIMIT_EXCEEDED trước ghi. Số này là trần bảo vệ đề xuất cần load test, không phải SLA đã đo.</p>
+<p>Emergency deactivate có ngoại lệ có chủ ý với việc cập nhật flags: user active=false là nguồn chuẩn tức thì; needsAssignment/reviewerUnavailable trong DTO được tính cả từ active user ở read/command dù job chưa materialize xong. Không tự chuyển completed task về mở chỉ do một người sau đó rời công ty; chỉ task mở/pending và người chưa hoàn thành phần hiện hành cần bàn giao.</p>
+<p>Outbox chỉ bảo đảm at-least-once; unique event/recipient/channel chống enqueue trùng nhưng không bảo đảm external provider chỉ gửi một lần nếu worker crash sau gửi trước lưu sentAt. Cần provider hỗ trợ idempotency key để giảm trùng; nếu không có, ghi nhận khả năng duplicate delivery và dedup ở inbox nơi kiểm soát được. Không tuyên bố exactly-once email/push. Recheck quyền trước dispatch là bắt buộc nhưng không thu hồi được email đã gửi; payload ngoài ứng dụng mặc định chỉ có thông báo chung và link có auth, không nhúng kết quả/mô tả nhạy cảm.</p>
+<h3>Notification events</h3>
+<ul>
+<li>task.created/subtask.created: người được giao, manager nhận yêu cầu liên phòng, watcher đủ quyền theo preference; không gửi toàn phòng vô điều kiện.</li>
+<li>assignment.added/removed/primary.changed: người mới, người cũ nếu còn quyền, primary và manager khi bỏ hết người. Không gộp “removed” thành “assigned”.</li>
+<li>subtask.completed/task.completed/parent.status.changed: primary cha và watchers có subscribe; completion task và completion từng assignee khác event.</li>
+<li>deadline.changed/task.overdue: assignees/primary/watchers; overdue scheduler dùng business date Asia/Ho_Chi_Minh và dedup <code>(taskId,dueDate,completionCycle,type,recipient)</code> cho thông báo quá hạn lần đầu; không gửi mỗi ngày chỉ vì cron chạy. Đổi hạn hoặc chu kỳ mở lại tạo mốc mới; nếu có daily reminder phải là event type khác theo preference.</li>
+<li>task.reopened/approval.requested/accepted/rejected/invalidated: reviewer cho pending; primary/assignees cho decision; không gửi acceptance cũ khi mất quyền.</li>
+</ul>
+<p>Tất cả event có eventId/actor/aggregateVersion/causationId; loại self notification, batch recipients bằng <code>$in</code>. In-app ghi cùng transaction và unique event/recipient; external outbox worker at-least-once với dedup theo event/recipient/channel. Trước gửi và lúc mở link kiểm quyền lại; không nhúng mô tả nhạy cảm vào payload email đã xếp hàng. Retry không nhân đôi lịch sử hoặc thông báo.</p>
+<h3>Migration và rollback</h3>
+<ol>
+<li>Chạy read-only inventory: số task thiếu parent, orphan, cycle, duplicate role, inactive assignee/reviewer, sai phòng, thiếu ngày, cached count lệch, kích thước histories. Xuất thống kê có scope, không sửa dữ liệu.</li>
+<li>Backup và diễn tập restore; snapshot code/schema versions. Tạo collections/indexes mới trước, kiểm duplicate trước unique index. Không đổi ID task/file/user.</li>
+<li>Adapter gắn policyVersion=legacy-v1 khi thiếu, không chỉ suy completionMode. Reviewer trên task không con vẫn không buộc phê duyệt, cha chưa phân công vẫn tính theo guards cũ, thay đổi con vẫn dùng luồng xác nhận cũ thay vì tự gửi pending. Map assigneeId → primary và assigneeIds=[id], participant giữ nguyên. Modern-v2 chỉ bật cho task mới hoặc upgrade-policy command có preview. Creator giữ nguyên; assignedBy quá khứ không biết thì null/unknown, không bịa creator là người giao.</li>
+<li>Backfill theo batch checkpoint idempotent và không sửa updatedAt nghiệp vụ nếu chỉ bổ sung projection. Không tự đóng/mở task hoặc gửi notification do migration. Task bất thường vào báo cáo xử lý, không âm thầm “sửa”.</li>
+<li>Dual-write projection và assignment trong cùng transaction, so sánh shadow reads; test counts cũ/mới. Sau đó bật feature flag cho một phòng, theo dõi event/latency/conflicts.</li>
+<li>Cutover reader rồi writer; ghi rõ source of truth duy nhất. Không duy trì hai writer độc lập assigneeId và assigneeIds. Rollback bằng feature flag về reader tương thích; không thả collection/field mới để rollback.</li>
+<li>Nhiều cấp/move/dependency chỉ bật sau khi reader legacy không còn hiểu sai. Khi đã có co-assignee/nested task không thể downgrade an toàn về app chỉ hiểu một người/một cấp; rollback phải giữ adapter hoặc khóa write và dùng forward fix.</li>
+</ol>
+</article>
+<article id="doc-05" class="document"><p><a href="#top">Về mục lục</a> · <a href="05-ui-ux-specification.md">Nguồn Markdown</a></p><h2>Đặc tả giao diện tạo và xử lý công việc ADIGO</h2>
+<p>Đề xuất chờ duyệt. Dùng ngôn ngữ và phong cách giao diện Organic Work hiện có; học mô hình tương tác, không sao chép tài sản/giao diện ClickUp. Mobile 390 px và desktop 1440 px là kích thước kiểm thử tối thiểu, không thay thế kiểm tra thiết bị thật.</p>
+<h3>List và Board</h3>
+<h4>Cây công việc trong danh sách phòng ban</h4>
+<p>Mỗi dòng gồm nút mở cây, title/link, status, primary + nhóm avatar assignees, deadline, priority, <code>x/y hoàn thành</code> và menu. Dòng con thụt vào, nhãn Công việc con, có đường quay về cha. Nút <code>+</code> thêm con luôn có tên truy cập “Thêm công việc con cho …”; desktop có thể gọn, mobile không phụ thuộc hover. Cha done hiện “Mở lại để thêm việc con”, không silently reopen.</p>
+<p>Ba chế độ hiển thị: Thu gọn, Mở rộng và Tách riêng. Tree mode giữ cha làm context khi con khớp filter, nhưng cha không khớp phải gắn “Ngữ cảnh” và không cộng vào totals. Các con không khớp không tự xuất hiện vì mở cây; có lựa chọn xem toàn bộ trong chi tiết. Counts tổng số con có thể khác số đang lọc, phải ghi “2 con hiển thị / 5 con tổng”. Không hiện title cha nếu người dùng không được xem cha.</p>
+<p>Việc của tôi mặc định Tách riêng để không che subtask được giao khi cha thuộc người khác; có tabs Tôi phụ trách, Tôi cùng thực hiện, Tôi tham gia, Tôi theo dõi. Assignment role quyết định tab; không suy từ participant thành assignee. Tổng task duy nhất không nhân đôi giữa primary/co-assignee.</p>
+<p>Lưu mode, filters, sort, group trong URL; expanded IDs có thể lưu state theo view/user, không đưa toàn dữ liệu vào URL. Từ detail quay lại đúng filter và anchor; sau tạo con giữ nguyên scroll, tự mở cha khi cần và focus về dòng vừa tạo.</p>
+<p>Sort hỗ trợ deadline, priority, title, status và manual ở từng nhóm anh em; khi sort khác manual thì drag reorder bị tắt có giải thích. Group theo status/phòng/người phụ trách được cân nhắc theo view; không kéo con ra khỏi cha chỉ vì group status khác. Search bản đầu theo title, bổ sung description sau khi đánh giá index/search engine. Không tự nhận tìm được comments/files nếu backend chưa tìm.</p>
+<h4>Inline editor và menu</h4>
+<ul>
+<li>Status editor dùng capabilities server; chuyển waiting mở nhập lý do; done gọi completion, không PATCH status trực tiếp.</li>
+<li>Assignee picker có primary rõ và nhiều người; người đã inactive vẫn hiển thị lịch sử nhưng không thể chọn mới. Primary phải thuộc assignees, tự loại khỏi participants có thông báo rõ.</li>
+<li>Deadline editor hiển thị cảnh báo vượt cha, giữ dữ liệu khi server từ chối; không tự kéo hạn cha.</li>
+<li>Menu theo quyền: mở chi tiết, thêm con, phân công/giao lại, sửa, đổi mode, mở lại, archive; move/convert/duplicate/delete chỉ xuất hiện khi phase đã có backend.</li>
+<li>Không optimistic thay status/assignee trước khi server chấp nhận trong luồng có nhiều guard. Busy khóa đúng thao tác; lỗi 409 tải dữ liệu mới và yêu cầu người dùng kiểm tra phần thay đổi, không ghi đè tự động.</li>
+</ul>
+<p>Bulk toolbar xuất hiện khi chọn task, hiển thị số lượng và operation hỗ trợ. Preview tất cả task trước ghi; batch atomic cùng scope tối đa 50. Những task chỉ là context không được chọn. Drag/drop cuối lộ trình chỉ gọi cùng move command; có lựa chọn menu tương đương cho keyboard và mobile.</p>
+<h4>Board</h4>
+<p>Board dùng cùng capabilities và status transition; bản đầu giữ menu đổi trạng thái, không làm thêm drag/drop chỉ vì ClickUp có. Chế độ separate có thẻ con riêng kèm parent link; chế độ collapsed có count và mở section. Không render cùng task hai lần rồi cộng hai lần. Việc cha tổng hợp có khu vực theo dõi hoặc thẻ có nhãn tổng hợp; đưa vào số liệu theo cùng leaf rule với List.</p>
+<h3>Task Detail</h3>
+<p>Header: breadcrumb cha có kiểm quyền; title; status; priority; menu; nút hành động chính tùy readiness/mode. Khu nội dung: mô tả → kết quả yêu cầu → progress và subtasks → checklist/dependencies khi bật → files → trao đổi và activity. Desktop có cột thông tin bên phải; mobile đưa các trường quan trọng lên trước trao đổi, không giấu nút thêm con ở cuối trang.</p>
+<p>Thông tin trách nhiệm hiển thị riêng: người tạo, người giao gần nhất có link lịch sử, primary, co-assignees, participants, watchers và reviewer. Creator không phải dropdown sửa. Labels thống nhất “Người phụ trách chính”, “Người cùng thực hiện”, “Người tham gia”, “Người theo dõi”, “Người nghiệm thu”.</p>
+<p>Progress hiển thị nguồn tính: “2/5 công việc con hoàn thành · 40%”. Nếu Manual/Approval và 100%, hiện “Đủ điều kiện đóng” hoặc “Chờ nghiệm thu”, không dùng nhãn Hoàn thành trước khi status done. Riêng deadline có cả cờ “Có việc con quá hạn” và cờ quá hạn của chính task.</p>
+<p>Subtask section luôn hiện cho task đủ điều kiện có con, kể cả 0/0: “Chưa có công việc con” và nút thêm theo quyền. Rows có title, assignees, deadline, status, progress riêng và menu. “Hiện con lưu trữ” là toggle tách biệt; con archive không vào mẫu số. Khi vượt depth, không hiện thao tác tạo nhưng có giải thích cấp tối đa.</p>
+<p>Activity có filter loại sự kiện, cursor tải thêm; before/after tên người lấy được từ snapshot/ID có quyền, giữ tên historical khi tài khoản inactive. Thông báo đổi người không ghi đơn thuần “đã sửa” mà nêu ai→ai, actor, lúc nào, lý do. Hiển thị automatic source khác người bấm hoàn thành để tránh hiểu actor là người duyệt.</p>
+<h3>Composer thống nhất</h3>
+<p>Một <code>TaskComposer</code> phục vụ Create Task và Create Subtask; dùng cùng schema DTO. Khi mở từ cha, parent đã chọn, owning/requesting department bị khóa theo cha và server vẫn xác minh. Khi mở global có bộ chọn loại công việc và parent search theo quyền; không cho đổi parent bằng metadata edit.</p>
+<h4>Quick create</h4>
+<p>Hiện title, phòng hoặc cha context, assignees/primary, hạn bắt buộc và priority. Expand “Thêm chi tiết” để có description, startDate, file, participants và mode. Không giấu trường nghiệp vụ bắt buộc nhằm đạt ít click. Enter lưu khi focus ở title; textarea Enter xuống dòng; Cmd/Ctrl+Enter có thể lưu khi form hợp lệ. Không tạo khi IME đang composition.</p>
+<h4>Full create</h4>
+<p>Title, description/kết quả yêu cầu, phòng, assignees, primary, participants, start/due, priority và file. Completion mode ở phần quy tắc; Approval mở reviewer bắt buộc. Watchers/checklist/dependencies chỉ hiển thị sau khi có feature và backend; không render control giả. DueDate không trước startDate, parent done/archived/scope stale hiển thị lỗi bên cạnh parent.</p>
+<p>Footer: Hủy, Tạo, Tạo và tiếp tục. Tạo và tiếp tục giữ parent/phòng/priority theo lựa chọn rõ, reset title/mô tả/file/assignees nhạy cảm; phát UUID mới sau mỗi lần thành công. Khi lỗi hoặc mất response giữ UUID và draft để retry không tạo trùng. File upload đã thành công cần giữ staged IDs, không upload lại khi retry; chưa attach thì được cleanup theo TTL hiện có.</p>
+<p>Create-and-continue không chuyển trang sau mỗi task. Có feedback “Đã tạo …”, link mở task mới và focus về title. Sau Tạo bình thường từ detail/list, close đúng dialog và refresh task/ancestor rows; không reset filter. Đóng draft có dữ liệu cần confirm bỏ thay đổi; không yêu cầu xác nhận khi form rỗng.</p>
+<h3>Các dialog nghiệp vụ</h3>
+<ul>
+<li><strong>Giao lại:</strong> hiện tập hiện tại, primary cũ, tập mới, primary mới và reason. Preview người bị gỡ/thêm, phần submission bị thay hiệu lực, ai nhận thông báo. Không thay người của con khi giao lại cha.</li>
+<li><strong>Chuyển việc con:</strong> chọn cha mới hoặc chuyển thành task; hiện breadcrumb, phòng, max depth, thay đổi progress cả hai cha và cảnh báo phạm vi. Confirm chỉ với preview token còn đúng version. Không hỗ trợ chuyển khác scope trong bản đầu.</li>
+<li><strong>Hoàn thành:</strong> hiển thị blockers và count con; đủ điều kiện thì nhập kết quả/tệp. Manual có “Xác nhận hoàn thành”; Approval task lá hoặc cha cần báo cáo riêng có “Gửi nghiệm thu”. Cha Approval có con đủ điều kiện và đủ kết quả sẽ tự tạo pending: lúc này hiện “Đã gửi nghiệm thu”, không thêm nút gửi tạo cycle thứ hai. Sau rejected/invalidated hiện “Sửa và gửi lại”. Legacy-v1 giữ nút xác nhận của luồng hiện tại, không tự đổi UI sang auto-submit.</li>
+<li><strong>Duyệt:</strong> reviewer thấy kết quả, cycle và danh sách con; buttons “Duyệt hoàn thành”, “Yêu cầu sửa”. Reject phải có lý do; stale cycle thì disable và tải mới.</li>
+<li><strong>Đổi mode:</strong> giải thích hành vi, reviewer nếu cần, preview việc có đóng ngay hay mất approval, reason. Task done phải mở lại trước; không thay mode rồi tự xóa chứng cứ duyệt.</li>
+<li><strong>Archive/delete:</strong> hiện rõ số con và tác động lên cha; soft delete và archive khác câu chữ. Không có nút xóa vĩnh viễn trong scope đầu.</li>
+<li><strong>Chuyển giao khi khóa tài khoản:</strong> Admin thấy việc mở, primary/reviewer/co-assignee; chuyển hàng loạt trong scope hoặc chọn hàng chờ. Trường hợp khóa khẩn cấp ghi lý do và nhu cầu manager xử lý.</li>
+</ul>
+<h3>Accessibility và feedback</h3>
+<p>Tái sử dụng <code>Dialog</code> hiện có cho focus trap, Escape, trả focus và khóa đóng khi đang lưu; composer hiện dùng backdrop riêng nên cần hợp nhất, nhưng phải kiểm tra các hook keyboard hiện có trước khi thay. Buttons có type, label và busy state; aria-live cho thông báo thành công/lỗi, aria-expanded/controls cho cây. Không yêu cầu màu để phân biệt trạng thái.</p>
+<p>Loading có skeleton đúng vùng; empty nêu không có việc hoặc không có kết quả lọc, không lẫn permission denied. Lỗi field giữ dữ liệu; session hết hạn lưu draft phù hợp nhưng không hiển thị dữ liệu cho tài khoản tiếp theo. Touch targets tối thiểu 44 px; không overflow ngang toàn trang tại 390 px; bảng rộng cuộn trong vùng có nhãn. Kiểm keyboard-only, screen-reader labels, focus sau thêm/reassign/reopen và mobile menu.</p>
+<h3>Tiêu chí đồng nhất</h3>
+<p>Cùng task, cùng user và cùng version phải thấy cùng status/assignees/progress/mode ở List, Board, My tasks và Detail. Khác filter có thể khác danh sách nhưng không được khác định nghĩa completion. Server capabilities hướng dẫn UI, mọi command vẫn kiểm quyền lại lúc lưu. Khi chưa có realtime, phải có Refresh rõ và refetch khi focus/tab trở lại; realtime là phần nâng cấp riêng, không gọi cache TTL là đồng bộ đa phiên.</p>
+<p>Tree mode group theo giá trị của root/context cha, rồi sort các anh em trong nhánh; không đặt cùng một nhánh vào nhiều group chỉ vì con khác status. Muốn group mọi con theo status/assignee độc lập thì chuyển sang separate mode. Số tổng đầu việc và số cha ngữ cảnh được hiển thị riêng.</p>
+<p>Ma trận quyền thao tác chuẩn nằm trong <a href="#permission-matrix">bản tổng quan</a>. User có nhiều role nhận hợp các quyền cho phép, nhưng guard cấm self-approval/archived/deleted/blocked/stale vẫn có ưu tiên cao hơn; không bật nút Duyệt chỉ vì user là Admin. Khi chọn task có legacy policy, hiện mô tả hành vi cũ và không ngầm chuyển sang policy mới bằng một lần sửa metadata.</p>
+</article>
+<article id="doc-06" class="document"><p><a href="#top">Về mục lục</a> · <a href="06-implementation-plan-and-tests.md">Nguồn Markdown</a></p><h2>Kế hoạch triển khai và kiểm thử Task và Subtask ADIGO</h2>
+<p>Trạng thái: chờ phê duyệt. Chưa sửa code ứng dụng, chưa migration, chưa viết/chạy bộ test cho tính năng sản phẩm đề xuất. Các ca sản phẩm dưới đây là hợp đồng nghiệm thu sẽ chuyển thành executable khi bắt đầu coding theo bước 7. Riêng ca E19 kiểm hồ sơ HTML đã có script QA chạy offline, không truy cập ứng dụng/database.</p>
+<h3>Các quyết định cần duyệt</h3>
+<ol>
+<li>ADIGO là tên nghiệp vụ cho repo Organic Work hiện tại, chưa đổi brand/package/database.</li>
+<li>Giữ participant đúng nghĩa phối hợp; thêm true multiple assignees + một primary. Không tự đổi participant cũ thành assignee.</li>
+<li>Task mới mặc định Manual; Approval cho việc cần nghiệm thu; Automatic được manager bật rõ. Task cũ giữ hành vi cũ qua adapter/migration.</li>
+<li>Giai đoạn đầu một cấp con; nâng tối đa 3 cấp con dưới root sau khi đã có cycle guard, lock nhiều root và leaf metrics. Không mở 7 cấp chỉ để theo ClickUp.</li>
+<li>Employee không tự giao lại; dùng đề nghị chuyển việc. Quyền delegateSubtasks mặc định tắt. Chuyển cha chỉ cùng owning/requesting scope trong bản đầu.</li>
+<li>DueDate tiếp tục bắt buộc; hạn con vượt cha được cảnh báo, không tự đổi hạn cha. Delete là soft delete, chặn cha còn con hoạt động; không hard delete/cascade trong scope đầu.</li>
+</ol>
+<p>Phê duyệt có thể giới hạn Phase 1; các phase sau vẫn giữ gate nghiệp vụ riêng nếu scope thay đổi. Không ước lượng ngày hoàn tất khi chưa đo baseline và xác nhận phạm vi.</p>
+<h3>Gate trước coding</h3>
+<p>Chốt các lựa chọn trên và xác nhận dùng codebase này. Khôi phục MongoDB replica set test tại cấu hình dev/test, không dùng database ứng dụng. Read-only inventory + backup/restore rehearsal trước migration. Chạy baseline typecheck, integration, E2E; mọi failure được phân biệt lỗi có sẵn với regression. Không chạy Next dev/build/E2E đồng thời vì dùng chung <code>.next</code>.</p>
+<p>Ưu tiên P0 là tính đúng quyền/dữ liệu; P1 là luồng người dùng; P2 là mở rộng. Thứ tự 1→2→3→4→5 giữ như prompt, nhưng Phase 1 chỉ làm hierarchy nền; move và multi-level chỉ được bật khi policy/assignment/completion của Phase 2–3 đã hiểu các tác động đó.</p>
+<h3>Phase 1 hoàn thiện task và hierarchy nền</h3>
+<p><strong>Scope:</strong> model/DTO typed, exact route dispatch, capability policy, validation chung, composer thống nhất, List context/tree một cấp, progress count hiện có và idempotency hash. Giữ nguyên semantics completion/assignment cũ trong phase này. Chuẩn bị path/version, chưa bật nested/move.</p>
+<p><strong>Files/modules:</strong> <code>src/lib/model.ts</code>, <code>service.ts</code>, <code>task-hierarchy.ts</code>, <code>work-query.ts</code>, <code>work-model.ts</code>, catch-all API, <code>workspace.tsx</code>, <code>work-views.tsx</code>, <code>task-hierarchy.tsx</code>, <code>task-row-menu.tsx</code>, <code>dialog.tsx</code>; đề xuất thêm task-types/task-policy/task-command DTO modules và TaskComposer/TaskTreeRows. Đọc tài liệu Next cài trong <code>node_modules/next/dist/docs</code> trước sửa handler/components.</p>
+<p><strong>Migration:</strong> optional schemaVersion/version/root/path; dry-run orphan/cycle/count; checkpoint backfill không đổi trạng thái. Index child cursor; chưa bỏ field cũ.</p>
+<p><strong>API/UI:</strong> POST/PATCH/GET cũ qua adapter; hierarchy cursor, activities cursor và strict suffix dispatch. Quick/full/create-next cùng schema; cây ở List phòng ban, My tasks vẫn separate.</p>
+<p><strong>Acceptance:</strong> tạo từ list/detail/global không tạo trùng; reload giữ đúng cha/phòng/file; startDate tùy chọn thống nhất; filter/scroll/focus được giữ; không lộ title cha ngoài quyền; tổng số đầu việc không cộng cha+con; route lạ không bị PATCH handler nuốt.</p>
+<p><strong>Tests:</strong> U01–U04, I01–I05, I15, E01–E04, E10 bên dưới; regression hiện có subtasks/participants/workflow.</p>
+<p><strong>Risks:</strong> dữ liệu cũ lệch counts/path; filter cây làm mất context; composer làm hỏng staged upload; existing working tree nhiều thay đổi. Tách thay đổi phase trong diff rõ, không reset phần khác.</p>
+<h3>Phase 2 assignment và permissions</h3>
+<p><strong>Dependencies:</strong> Phase 1 typed DTO/capability/idempotency ổn định; approval invalidation interface được định nghĩa trước dù UI duyệt ở Phase 4.</p>
+<p><strong>Scope:</strong> nhiều assignee thực sự, primary, participant giữ riêng, submission cá nhân, history phân công, đề nghị chuyển việc và bàn giao khi vô hiệu hóa; không mở rộng quyền ngoài phòng.</p>
+<p><strong>Files/modules:</strong> service/model/auth/adminWrite, task-participants, task-hierarchy/ReassignTask, task-row-menu, work-query/work-model, notifications; thêm task-assignment-service, assignment history/submission UI và account handoff dialog.</p>
+<p><strong>Migration:</strong> task_assignments, assignment requests, assignee arrays/primary projection; map assigneeId cũ, giữ participant cũ; historical assignedBy unknown phải ghi unknown; unique partial index sau kiểm trùng.</p>
+<p><strong>API/UI:</strong> assignment PUT, submission của tôi, assignment request create/decision; My tasks phân tab primary/co/participant; dialog hiển thị delta và ảnh hưởng approval. User lock/revision dùng chung với deactivate/change department.</p>
+<p><strong>Acceptance:</strong> A–H trong đặc tả 03 được xử lý; role duplicate bị chặn; co-assignee không đóng chung; người cũ mất đúng quyền; task không rơi vô chủ âm thầm; assignment không vượt qua deactivate đồng thời; lịch sử không bị ghi đè.</p>
+<p><strong>Tests:</strong> U05–U06, I06–I09, I16–I17, E05–E06. Kiểm trực tiếp API bằng user khác phòng/inactive, không chỉ kiểm nút ẩn.</p>
+<p><strong>Risks:</strong> participant bị đổi nghĩa; hai nguồn assignee ghi độc lập; nhiều người làm làm bộ đếm nhân đôi; quyền của primary bị lẫn quyền manager.</p>
+<h3>Phase 3 completion modes và progress</h3>
+<p><strong>Dependencies:</strong> assignment/readiness từ Phase 2, ancestor locks từ Phase 1. Core approval commands/guards cần có trong phase này để Approval không là lựa chọn giả; Phase 4 hoàn thiện event và trải nghiệm duyệt.</p>
+<p><strong>Scope:</strong> Manual/Automatic/Approval, separate execution progress và readiness; progress count trước, weighted/estimate/manual sau flag; dependency DAG; move/convert và nested depth tối đa 3 sau khi invariants đạt.</p>
+<p><strong>Files/modules:</strong> task-completion-service, task-progress-policy, task-dependency-service, task-hierarchy, service, workflow configuration, API commands, TaskHierarchy, mode editor và progress display; work-model/query leaf counts.</p>
+<p><strong>Migration:</strong> completionMode cũ suy từ reviewer như hiện tại; giữ status/acceptance evidence; approval cycles; weight/estimate tùy chọn; path/backfill root đủ trước nested; graph locks/dependencies và indexes.</p>
+<p><strong>API/UI:</strong> completion/reopen, completion-policy, progress, dependency, move/convert, impact preview và approval decision core. UI mode/reviewer/readiness/blockers, cảnh báo deadline, preview ảnh hưởng hai cha.</p>
+<p><strong>Acceptance:</strong> 2/5=40%; 100% Manual không tự done; Approval không done trước accepted; Automatic không tự đóng task không con; reopen con invalidate ancestors; đồng thời hai con cuối chỉ một done event/cycle; move atomic cả hai cây; cấm cycle/depth vượt; không bypass hard dependency.</p>
+<p><strong>Tests:</strong> U07–U12, U14–U18, I10–I14, I18–I24, I33–I40, E07–E09, E11, E17–E19. Property tests cho reducer/progress trên tổ hợp hợp lệ và boundary, không dùng snapshot UI làm bằng chứng consistency.</p>
+<p><strong>Risks:</strong> migration đổi hành vi cũ; nested progress double count; transaction quá lớn; deadlock khóa hai root; graph cycle do hai cạnh đồng thời; mode flip khiến đóng ngoài ý muốn.</p>
+<h3>Phase 4 notification và approval workflow</h3>
+<p><strong>Dependencies:</strong> typed events, approval cycle/submission revision và assignment invalidation từ Phase 2–3.</p>
+<p><strong>Scope:</strong> reviewer inbox, accept/reject, watchers/preferences, event taxonomy, outbox cho kênh ngoài nếu được chọn, overdue scheduler, audit cursors, account handoff notification. Không xây workflow automation engine tổng quát ở phase này; chỉ domain rules có guard/cause rõ.</p>
+<p><strong>Files/modules:</strong> notifications.ts, notification-bell.tsx, task-approval-service/events/outbox-worker, activity UI, watcher controls, scheduler entry point có auth và business timezone.</p>
+<p><strong>Migration:</strong> task_approvals/watchers/outbox; unique event/recipient/channel; bổ sung eventId/cycle cho sự kiện mới, không bịa quyết định lịch sử; notification legacy đọc được.</p>
+<p><strong>API/UI:</strong> approvals list/detail/decision, notification cursors/preferences, watchers; badge Chờ nghiệm thu/Đã yêu cầu sửa và reviewer-unavailable. Replay outbox sau lỗi không lặp quyết định.</p>
+<p><strong>Acceptance:</strong> event A–H và trạng thái được gửi đúng người; removed chỉ notify khi còn scope; không gửi lại due/overdue trong cùng mốc; accept stale cycle bị 409; reviewer mất quyền không duyệt được; queue không leak nội dung sau revoke.</p>
+<p><strong>Tests:</strong> U13, I25–I28, E12–E13. Kiểm dedup, rollback, quyền bị thu hồi trước delivery và lúc mở link.</p>
+<p><strong>Risks:</strong> outbox at-least-once gây trùng; webhook gửi trong transaction; gửi thông tin người dùng đã mất quyền; spam parent status events.</p>
+<h3>Phase 5 UX, regression và hiệu năng</h3>
+<p><strong>Dependencies:</strong> invariant/commands ổn định qua các phase trước. Soft delete/checklist/duplicate/bulk là scope thêm cần duyệt; time tracking/custom fields/hybrid progress thuộc roadmap riêng nếu chưa có nhu cầu rõ.</p>
+<p><strong>Scope:</strong> accessibility, keyboard/mobile, bulk atomic, duplicate có tùy chọn, soft delete/restore, checklist required, sort/group/search hợp lý; drag/drop dùng cùng command sau menu fallback. Realtime SSE chỉ làm nếu có yêu cầu đa phiên; trước đó refetch-on-focus + Refresh rõ.</p>
+<p><strong>Files/modules:</strong> composer/detail/list/board/dialog/CSS, command modules tương ứng, work-query aggregation, test fixtures và Playwright. Không thay brand hoặc kiến trúc framework ngoài phạm vi.</p>
+<p><strong>Migration:</strong> deletedAt/checklist/duplicate provenance, indexes được explain/load test; không drop fields hoặc GridFS. Có feature flags/compatibility rollback, không downgrade về app không hiểu nested/co-assignee.</p>
+<p><strong>API/UI:</strong> bulk, duplicate, soft delete/restore và checklist, drag-drop gọi move/status command. Cùng semantics ở mọi view; pagination không mất con được giao khi cha không khớp.</p>
+<p><strong>Acceptance:</strong> keyboard đầy đủ, 390/1440 px không hỏng bố cục; create-next không tạo trùng; reload giữ progress; hồi quy tất cả test cũ; kiểm DB/audit/notification; không N+1 theo số dòng; latency đạt ngân sách đã đo và chốt ở Gate, không tuyên bố SLA chưa đo.</p>
+<p><strong>Tests:</strong> I29–I32, E14–E16, performance fixture 50 dòng/page và cây đến giới hạn cấu hình; production build sau toàn bộ regression. Quan sát query count, payload size, p50/p95, conflict rate và outbox retries.</p>
+<p><strong>Risks:</strong> scope phình thành bản sao ClickUp; test dữ liệu thật; thiếu keyboard fallback; rollback dữ liệu không tương thích; N+1 người/notification và lịch sử quá dài.</p>
+<h3>Danh mục test phải chuyển thành executable</h3>
+<p>Mỗi ca cần fixture riêng và assert trạng thái <strong>sau reload/đọc lại DB</strong>. User/org/database tên test được cô lập; không seed/reset DB ứng dụng. Existing tests được giữ và bổ sung; không cần dựng lại framework test. Unit có thể dùng node:test + tsx cho pure policy; integration Mongo thật replica set; E2E dùng Playwright hiện có.</p>
+<h4>Unit</h4>
+<ul>
+<li><strong>U01</strong> title rỗng/251 ký tự, ngày sai, leap-day, startDate sau dueDate bị từ chối.</li>
+<li><strong>U02</strong> tạo con kế thừa scope từ cha; client giả owning/requesting không có hiệu lực.</li>
+<li><strong>U03</strong> depth root=0, self-parent, cycle và subtree move vượt maxDepth bị chặn.</li>
+<li><strong>U04</strong> capability matrix đủ admin/receiving manager/sending manager/primary/co/participant/watcher/outside/inactive.</li>
+<li><strong>U05</strong> khử trùng role, primary phải thuộc assignees; participant không tự thành co-assignee.</li>
+<li><strong>U06</strong> policy primary/all và B submitted C active cho readiness khác nhau, không đổi status tùy tiện.</li>
+<li><strong>U07</strong> count 2/5=40%; 0 con không tự đủ điều kiện đóng; mẫu số loại archive/delete.</li>
+<li><strong>U08</strong> weighted ví dụ 60%; weight 0/NaN/âm bị từ chối; estimate thiếu không bị âm thầm loại.</li>
+<li><strong>U09</strong> manual progress 100 không bypass con/dependency/approval.</li>
+<li><strong>U10</strong> state transitions đúng mode; waiting thiếu reason bị chặn; chỉ completion command được done.</li>
+<li><strong>U11</strong> approval accepted gắn đúng cycle/submission revision; reject cần reason; reopen làm invalidated.</li>
+<li><strong>U12</strong> ngày Asia/Ho_Chi_Minh, con quá hạn khác cha quá hạn; checklist không cộng task count.</li>
+<li><strong>U13</strong> recipient resolution loại self/inactive/outside, unique event/recipient/channel và overdue key ổn định.</li>
+<li><strong>U14</strong> legacy-v1 task không con dù có reviewer vẫn dùng luồng cũ; cha không assignee vẫn giữ guards cũ, modern-v2 chặn thiếu người hợp lệ.</li>
+<li><strong>U15</strong> Approval cha đủ con và đủ result tự pending đúng một lần; missing own result chỉ ready; leaf cần explicit submit.</li>
+<li><strong>U16</strong> rejected không tự pending lại khi recompute; role Admin+assignee vẫn bị self-approval guard chặn nếu policy không cho.</li>
+<li><strong>U17</strong> dependency finish-to-start chặn bắt đầu lẫn complete; move không được tạo dependency với ancestor mới.</li>
+<li><strong>U18</strong> DTO missing fields, manual mode approvalState none; số liệu direct-child milestone không nhầm với rollup leaf hay giờ tracked.</li>
+</ul>
+<h4>Integration</h4>
+<ul>
+<li><strong>I01</strong> POST task → collection task/assignment/activity/notification đúng; replay cùng request chỉ một task.</li>
+<li><strong>I02</strong> cùng requestId khác payload → 409; metadata update unknown field → 422.</li>
+<li><strong>I03</strong> tạo con khác assignee cha, cùng department; file brief được link; parent link và counts đúng.</li>
+<li><strong>I04</strong> child under archived/done/depth vượt bị chặn ở API, không ghi nửa dữ liệu.</li>
+<li><strong>I05</strong> hierarchy filter/cursor không leak hidden ancestors; totals không tính context hoặc trùng task.</li>
+<li><strong>I06</strong> B,C assignees, B primary; both My tasks đúng role; task total vẫn một.</li>
+<li><strong>I07</strong> reassign B→D giữ status/dates/files/comments; B mất quyền xử lý riêng, còn scope xem; audit có actor/before/after/reason.</li>
+<li><strong>I08</strong> inactive/cross-department assignee và participant bị chặn; reviewer ngoài scope bị chặn.</li>
+<li><strong>I09</strong> B submit C active, policy all chặn complete; primary policy vẫn cần completion command explicit.</li>
+<li><strong>I10</strong> Manual 2/2 giữ doing; người có quyền complete mới done.</li>
+<li><strong>I11</strong> Automatic 1/2 chưa done, 2/2 done; hai con cuối chạy đồng thời chỉ một done event trong cycle.</li>
+<li><strong>I12</strong> reopen con sau accepted → cha reopen, current completedAt=null, old history/decision còn nguyên; xong lại phải duyệt cycle mới.</li>
+<li><strong>I13</strong> archive/delete con làm thay readiness cần previewToken đúng version; con cuối bị loại không tự đóng cha.</li>
+<li><strong>I14</strong> đổi completionMode có preview; done cần reopen; Approval→Auto eligible chỉ đóng sau confirm.</li>
+<li><strong>I15</strong> suffix route lạ không thực thi mutation tổng quát; actor giả trong body không thay creator/assignedBy.</li>
+<li><strong>I16</strong> assignee request chuyển chưa duyệt không đổi task; approve/reject đúng role và stale version.</li>
+<li><strong>I17</strong> assign đồng thời deactivate/change department: không tạo assignment active không hợp lệ; chuyển giao khẩn cấp giữ audit.</li>
+<li><strong>I18</strong> move con từ cha A→B tính lại cả hai; convert null giữ task ID/file/comment và creator.</li>
+<li><strong>I19</strong> move A→B và B→A đồng thời không tạo cycle; retry/deadlock bounded, không mất subtree.</li>
+<li><strong>I20</strong> depth của toàn subtree được kiểm; root/path cached nhất quán sau move.</li>
+<li><strong>I21</strong> thêm hai dependency đối nghịch đồng thời chỉ một thành công; ancestor/descendant dependency bị chặn.</li>
+<li><strong>I22</strong> hard finish-to-start dependency chưa done chặn start/submit/complete kể cả direct API; predecessor done mở readiness, không tự duyệt.</li>
+<li><strong>I23</strong> transaction fail giữa update và audit/notify rollback task/ancestors/assignments/outbox cùng nhau.</li>
+<li><strong>I24</strong> stale expectedVersion → 409, không overwrite thay đổi phiên khác; retry không duplicate handover.</li>
+<li><strong>I25</strong> pending review gửi reviewer một lần; reject/accept đúng cycle; revoke quyền trước quyết định bị chặn.</li>
+<li><strong>I26</strong> outbox retry sau send timeout dedup; event consumer không tạo vòng lặp status.</li>
+<li><strong>I27</strong> removed notification chỉ tới người cũ còn quyền; revoke sau enqueue không gửi nội dung nhạy cảm.</li>
+<li><strong>I28</strong> overdue timezone/boundary/due changed: không spam mỗi lần scheduler; unread/list/read dùng cùng quyền.</li>
+<li><strong>I29</strong> soft delete/restore giữ lịch sử/file; chặn cha còn con hoạt động; không hard delete.</li>
+<li><strong>I30</strong> bulk một task sai quyền/stale rollback toàn batch; unique request và events nhất quán.</li>
+<li><strong>I31</strong> duplicate có IDs mới/todo/creator mới, không copy approval/history/submission/file ngoài lựa chọn cho phép.</li>
+<li><strong>I32</strong> migration chạy hai lần không đổi creator/status/dates và không gửi notification; shadow counts tương đương; fixture old missing fields vẫn đọc được.</li>
+<li><strong>I33</strong> policy-upgrade chỉ qua command có preview; backfill không auto-enforce primary/reviewer policy lên task cũ; upgrade thiếu invariant bị 422.</li>
+<li><strong>I34</strong> cha Approval tự pending khi eligible; recompute nhiều lần không lặp cycle; leaf/gửi báo cáo riêng/reject-resubmit theo đúng command.</li>
+<li><strong>I35</strong> cùng user không thể có primary+co hoặc assignee+participant active; role switch giữ đủ interval lịch sử.</li>
+<li><strong>I36</strong> missing reporter/required own result không tạo vòng chờ vô hạn trong Automatic; UI/backend trả thiếu kết quả rõ; aggregate output ghi provenance system.</li>
+<li><strong>I37</strong> reopen predecessor invalidate successor done và ancestors trong impact plan; vượt 500 task từ chối trước ghi; recompute không vòng lặp.</li>
+<li><strong>I38</strong> dispatch legacy PATCH và v2 command dùng cùng guards; task ngoài scope trả 404, task nhìn thấy nhưng cấm thao tác trả 403; malformed JSON 400, unknown field 422.</li>
+<li><strong>I39</strong> outbox crash sau send/trước sentAt: provider idempotency thì không duplicate; provider không hỗ trợ phải ghi nhận delivery có thể lặp, không tuyên bố exactly-once.</li>
+<li><strong>I40</strong> participant/watch subscription không invalidate output; actor mất scope trước replay không đọc được operation result; preview hết hạn hoặc scope version đổi bị 409.</li>
+</ul>
+<h4>End to end</h4>
+<ul>
+<li><strong>E01</strong> manager tạo task từ global, file và người nhận đúng sau reload; employee ngoài quyền bị chặn trực tiếp.</li>
+<li><strong>E02</strong> tạo con từ menu List và section Detail kể cả rỗng, cùng form/validator; người nhận khác cha thấy My tasks.</li>
+<li><strong>E03</strong> Quick→Full giữ draft; Tạo và tiếp tục tạo ba con không trùng UUID/tệp; retry mất response không duplicate.</li>
+<li><strong>E04</strong> filter/sort/group/expanded/scroll/focus giữ khi quay qua cha/con, không hiện context ngoài scope.</li>
+<li><strong>E05</strong> B,C đều thấy role riêng; giao lại sang D làm hai phiên A/B/D phản ánh đúng sau refresh/reload.</li>
+<li><strong>E06</strong> participant không có action assignee; reviewer không có quyền manager; gọi API trực tiếp cũng bị chặn.</li>
+<li><strong>E07</strong> Manual/Auto/Approval thể hiện khác nhau ở List/Board/Detail; 100% pending không hiện done.</li>
+<li><strong>E08</strong> reject với lý do, sửa/nộp lại cycle mới, accept; stale reviewer dialog không duyệt kết quả cũ.</li>
+<li><strong>E09</strong> move/convert có preview hai cha, reload giữ ID/link/file; lỗi concurrency giữ draft và báo conflict.</li>
+<li><strong>E10</strong> mobile 390px/desktop 1440px: nút thêm con/giao lại tìm thấy không hover; keyboard focus/escape/menu/readout đúng.</li>
+<li><strong>E11</strong> con quá hạn/cha chưa quá hạn và blocked dependency có nhãn khác; completion dialog hiển thị blocker rõ.</li>
+<li><strong>E12</strong> notifications assigned/removed/review/reopen/due đúng tài khoản; mở link sau mất quyền không lộ nội dung.</li>
+<li><strong>E13</strong> khóa account có việc mở hiển thị chuyển giao; tài khoản cũ không tiếp tục ghi qua phiên sẵn có.</li>
+<li><strong>E14</strong> archive/delete/restore và checklist required giữ counts, output và history sau reload.</li>
+<li><strong>E15</strong> bulk và drag/drop có menu tương đương; rollback không để UI báo thành công một phần.</li>
+<li><strong>E16</strong> toàn bộ workflow/admin/profile/priority/participants/subtasks regression; production build và smoke production server.</li>
+<li><strong>E17</strong> task cũ và task mới cùng view hiện policy/label đúng; legacy chưa phân công không tự bị khóa bởi mode migration; chỉ upgrade action đổi semantics.</li>
+<li><strong>E18</strong> task cha auto-pending không có nút gửi lần hai; rejected giữ lý do đến khi explicit gửi lại; Admin cùng là assignee không tự duyệt trái policy.</li>
+<li><strong>E19</strong> tài liệu tổng quan mở đầy đủ nội dung nghiên cứu/thiết kế trong một HTML offline, navigation/hash/keyboard và bảng quyền hiển thị đúng ở 390/1440 px.</li>
+</ul>
+<h3>Hồ sơ nghiệm thu từng phase</h3>
+<p>Ghi commit/diff, môi trường và database test, lệnh thực chạy, exit code, ca pass/fail/blocked, ảnh List/Detail desktop/mobile, query timings và ghi nhận migration/rollback. Chuỗi E2E phải kiểm frontend→API→DB→permission→UI feedback, không kết luận từ component tồn tại. Phase nào chưa có bằng chứng thì ghi chưa xác minh, không gắn nhãn hoàn thành.</p>
+<p>Baseline thực tế của đợt thiết kế: TypeScript và production build đạt; integration bị chặn do MongoDB connection refused, Docker engine chưa chạy; chưa chạy E2E ứng dụng. Danh mục cuối là 77 ca (18 unit, 40 integration, 19 E2E/check), trong đó E19 là QA hồ sơ offline đã chạy ở 390/1440 px; 76 ca sản phẩm còn là đặc tả, không phải executable suite đã đạt. Sau khi bạn duyệt mới bắt đầu sửa code ứng dụng và chuyển các ca sản phẩm trên thành test.</p>
+</article>
+<article id="doc-07" class="document"><p><a href="#top">Về mục lục</a> · <a href="07-review-and-coverage.md">Nguồn Markdown</a></p><h2>Kết quả rà soát và độ bao phủ hồ sơ Task và Subtask</h2>
+<p>Ngày: 22/11/2026. Phạm vi hoàn tất là hồ sơ nghiên cứu và thiết kế; không đồng nghĩa tính năng đề xuất đã được lập trình hoặc hệ thống đã đạt end-to-end. Yêu cầu chờ duyệt trước chỉnh code ứng dụng vẫn giữ theo prompt.</p>
+<h3>Các thiếu sót đã sửa</h3>
+<ol>
+<li><strong>Approval không nhất quán:</strong> phân biệt cha tổng hợp tự tạo pending khi đủ cả con/kết quả với task lá hoặc cha thiếu báo cáo riêng cần gửi. Reject không được tự pending lại bởi recompute. Cycle và submission revision là guard quyết định.</li>
+<li><strong>Điều kiện primary/all có nguy cơ chờ vô hạn:</strong> primary không cần thêm tick cá nhân cho cha tổng hợp; all kiểm từng assignment cycle, primary submit phần mình cùng completion command, manager không submit thay người khác.</li>
+<li><strong>Kết quả tự động chưa rõ người chịu trách nhiệm:</strong> tổng hợp kết quả con có provenance system; initiator không phải reviewer hay người ký báo cáo. RequiresOwnResult được workflow định nghĩa và không bị auto-close bỏ qua.</li>
+<li><strong>Migration có thể đổi hành vi task cũ:</strong> thêm policyVersion legacy-v1/modern-v2. Giữ reviewer không con và cha chưa phân công theo semantics hiện tại; upgrade có preview thay vì backfill tự áp guards mới.</li>
+<li><strong>Quyền chỉ mô tả bằng prose:</strong> thêm ma trận 17 thao tác, 7 nhóm vai trò; guard cấm ưu tiên hơn role allow, Admin cũng không tự duyệt trái policy. Actor active/scope vẫn kiểm ở command.</li>
+<li><strong>Field coverage chưa tường minh:</strong> thêm từ điển 28 dòng, gồm 26 field trong prompt và hai scope phòng của repo; đánh dấu required/optional/system/configuration/unknown, hiện trạng và kế thừa.</li>
+<li><strong>API còn lỗ hổng:</strong> bổ sung list/filter/cursor, participants, watcher của tôi, checklist, comments, policy-upgrade, options/review queue và account handoff. Tổng 30 nhóm hợp đồng; giữ adapter cho API hiện hành, không bỏ qua guard bằng legacy PATCH.</li>
+<li><strong>Lỗi API mơ hồ:</strong> chốt 400 malformed, 401 anonymous, 404 missing/outside scope, 403 visible-but-forbidden, 409 conflict, 422 schema/domain; payloadHash/preview token có quy tắc chuẩn hóa rõ.</li>
+<li><strong>Assignment index chưa chặn trùng khác role:</strong> đổi unique partial sang taskId/userId active; thêm unique primary/task; giữ intervals khi đổi role.</li>
+<li><strong>Lock order chưa có thứ tự toàn cục:</strong> chốt scope/workflow graph → users → roots → task IDs, mọi command dùng cùng quy tắc; tập khóa thay đổi thì retry từ đầu.</li>
+<li><strong>Dependency gọi finish-to-start nhưng chỉ chặn đóng:</strong> bổ sung chặn start/submit/complete, invalidation khi predecessor reopen, guard quan hệ ancestor mới khi move và giới hạn impact trước ghi.</li>
+<li><strong>Outbox diễn đạt quá mạnh:</strong> tách chống enqueue trùng khỏi exactly-once delivery; crash sau send vẫn có thể lặp nếu provider không idempotent. External payload chung + link auth, không hứa thu hồi email đã gửi.</li>
+<li><strong>Các tài liệu ClickUp chưa được đối chiếu chéo:</strong> thêm nguồn riêng cho duplicate/move/time, ghi xung đột quyền guest giữa Intro và List/Board; không kết luận guest Edit chắc chắn được tạo subtask.</li>
+<li><strong>Bản tổng quan chỉ dẫn tới raw Markdown:</strong> render toàn bộ nội dung thành HTML offline đọc trực tiếp, thêm navigation giữa sáu deliverable, phụ lục và bảng quyền/field/events/traceability. Markdown vẫn là nguồn chỉnh sửa.</li>
+<li><strong>Validation mới chỉ kiểm file/link:</strong> bổ sung kiểm parse/report structure, số ca, ID bảng, local anchors, ảnh và browser layout 390/1440 px trong biên bản xác minh. Các mục chưa chạy phải ghi chưa xác minh, không tự đánh dấu đạt.</li>
+</ol>
+<h3>Traceability</h3>
+<p><a href="#requirement-coverage">Bảng đối chiếu 12 phần của prompt</a> nêu tài liệu đáp ứng và trạng thái bằng chứng. <a href="#field-dictionary">Bảng dữ liệu</a>, <a href="#permission-matrix">ma trận quyền</a> và <a href="#event-matrix">bảng 13 nhóm sự kiện</a> là phần cấu trúc đọc từ review-data.json để tránh mỗi bản tổng quan mô tả khác nhau.</p>
+<p>Sáu deliverable vẫn ở 01–06; tài liệu này là phụ lục review. Danh mục test đã tăng từ 61 lên 77 ca để phủ các thiếu sót mới; E19 là ca QA hồ sơ đã chạy, 76 ca còn lại là đặc tả sản phẩm. Không có test sản phẩm mới nào được viết/chạy trong giai đoạn thiết kế; validation của tài liệu không thay thế integration/E2E ứng dụng.</p>
+<h3>Phần vẫn cần bằng chứng ngoài hồ sơ</h3>
+<ul>
+<li>ClickUp phiên thật: chưa có Workspace/account xác định; các hành vi chưa xác minh như auto-reopen parent, cascade xóa/khôi phục và create-next giữ nhãn unknown. Không cần giả định chúng để triển khai chính sách riêng của ADIGO.</li>
+<li>ADIGO runtime: MongoDB cấu hình không nghe ở 127.0.0.1:27018; Docker engine chưa chạy. Không có inventory dữ liệu production, query explain hoặc E2E mới. Build đạt không chứng minh transaction và permission ở runtime đã đạt.</li>
+<li>Các giá trị 3 cấp, 500 hậu duệ/impact, 50 người và 50 bulk item là trần đề xuất để duyệt/đo, không phải hiệu năng đã kiểm chứng.</li>
+<li>Các lựa chọn Manual mặc định, primary/all, self-approval, employee delegation và zero-assignee là quyết định nghiệp vụ đang đề xuất. Không triển khai chúng như yêu cầu đã được duyệt.</li>
+</ul>
+<h3>Điều kiện đóng giai đoạn hồ sơ</h3>
+<p>Đóng khi đủ sáu deliverable; mọi phần prompt có tham chiếu; các mâu thuẫn trên được sửa xuyên tài liệu; report có nội dung đầy đủ và bảng dễ đọc; trạng thái test thực tế được ghi chính xác. Coding/migration/release nằm ngoài việc đóng giai đoạn này và tiếp tục cần phê duyệt theo bước 7 ban đầu.</p>
+<p>Lệnh tái tạo report: <code>node docs/task-subtask-design/render-report.mjs</code>. Lệnh kiểm không thay file: <code>node docs/task-subtask-design/render-report.mjs --check</code>. Các lệnh này chỉ xử lý tài liệu trong thư mục hồ sơ, không gọi API ứng dụng hoặc MongoDB.</p>
+<h3>Kết quả xác minh cuối</h3>
+<ul>
+<li>Renderer và <code>--check</code>: đạt kiểm cấu trúc 7 tài liệu, 28 field, 17 thao tác quyền, 13 nhóm event, 12 phần yêu cầu, ID/anchor/link nội bộ và 77 mã ca không trùng. Không dùng kiểm số lượng làm bằng chứng tính đúng nghiệp vụ; các quyết định đã được đối chiếu xuyên tài liệu ở phần trên.</li>
+<li>Chromium headless tại 1440×1000 và 390×1000: 7 nội dung đầy đủ hiện trong HTML; navigation tới kế hoạch, quay mục lục và keyboard Enter tới bảng quyền đạt; bảng quyền cuộn được trên mobile; không tràn ngang toàn trang, không có pageerror.</li>
+<li>Lỗi tràn ngang ban đầu do chuỗi kỹ thuật nối bằng dấu <code>/</code> trong nội dung đã sửa bằng wrap đúng vùng, không che nội dung bằng overflow hidden.</li>
+<li>Ảnh <a href="review-desktop.png">desktop</a>, <a href="review-mobile.png">mobile</a> đã mở để kiểm trực quan; kết quả máy đọc trong <a href="report-verification.json">report-verification.json</a>. Đây là kiểm tra hồ sơ, không phải giao diện tính năng mới.</li>
+<li>TypeScript và production build của repo: đạt. Integration/E2E ứng dụng và dữ liệu DB thực tế: chưa xác minh vì hạ tầng MongoDB chưa chạy. Không có migration/code ứng dụng nào được áp dụng.</li>
+</ul>
+</article></section>
+<!-- END FULL DOCUMENTS -->
+  <footer>
+    <h2>Phạm vi phê duyệt</h2>
+    <p>Sáu quyết định nghiệp vụ nằm trong <a href="#doc-06">kế hoạch</a>; <a href="#doc-07">phụ lục review</a> ghi rõ những phần đã hoàn thiện và giới hạn bằng chứng. Yêu cầu chờ duyệt coding xuất phát từ nguyên tắc 11.12 và bước 7 của prompt; chưa chỉnh sửa mã ứng dụng hoặc schema.</p>
+  </footer>
+</body>
+</html>

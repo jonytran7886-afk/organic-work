@@ -1,0 +1,96 @@
+.profile-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  border-radius: 6px;
+}
+.profile-link > div {
+  min-width: 0;
+}
+.profile-link strong {
+  overflow-wrap: anywhere;
+}
+.profile-link small {
+  display: block;
+}
+.profile-link[aria-current="page"] {
+  outline: 1px solid #ffffff50;
+  outline-offset: 5px;
+}
+.profile-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.profile-summary {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 24px;
+}
+.profile-summary .avatar {
+  width: 54px;
+  height: 54px;
+  font-size: 23px;
+}
+.profile-summary h2,
+.profile-security h2 {
+  margin: 0 0 8px;
+}
+.profile-summary p {
+  margin: 0;
+}
+.profile-personal form > label {
+  display: block;
+  margin: 18px 0 7px;
+}
+.profile-personal form > input {
+  width: 100%;
+}
+.profile-readonly {
+  margin-top: 24px;
+  display: grid;
+  gap: 14px;
+}
+.profile-readonly input {
+  color: var(--muted);
+  background: var(--bg);
+  cursor: default;
+}
+.profile-security p {
+  margin: 14px 0;
+}
+.profile-success {
+  background: #f1f8ed;
+  color: var(--green);
+  border: 1px solid var(--border);
+  padding: 12px;
+  border-radius: 8px;
+}
+.password-field {
+  margin-top: 18px;
+}
+.password-field > label {
+  display: block;
+  margin-bottom: 7px;
+}
+.password-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.password-control input {
+  flex: 1;
+  min-width: 0;
+}
+.password-control button {
+  flex-shrink: 0;
+}
+@media (max-width: 900px) {
+  .profile-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

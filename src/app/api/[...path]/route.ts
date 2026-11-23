@@ -13,6 +13,27 @@ import {
 } from "@/lib/service";
 import { canView } from "@/lib/model";
 import { queryWork, QueryPermissionError } from "@/lib/work-query";
+import {
+  attachmentLimits,
+  stageFile,
+  readFile,
+  discardFile,
+  FileInputError,
+  cleanupUploads,
+} from "@/lib/attachments";
+import { notificationsFor, markNotifications } from "@/lib/notifications";
+import { hierarchyDetails, childrenPage } from "@/lib/task-hierarchy";
+import {
+  ownProfile,
+  updateOwnProfile,
+  changeOwnPassword,
+  publicAccount,
+  ProfileInputError,
+} from "@/lib/profile";
+import {
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_MAX_LENGTH,
+} from "@/lib/password-policy";
 export const runtime = "nodejs";
 async function handle(
   req: NextRequest,
@@ -51,7 +72,7 @@ async function handle(
       try {
         const u = await login(b.email, b.password);
         await d.collection("login_attempts").deleteOne({ _id: key } as any);
-        return NextResponse.json({ user: serialize(u) });
+        return NextResponse.json({ user: serialize(publicAccount(u)) });
       } catch (e) {
         await d.collection("login_attempts").updateOne(
           { _id: key } as any,
@@ -72,9 +93,100 @@ async function handle(
       );
     if (path[0] === "session" && req.method === "GET")
       return NextResponse.json(
-        { user: serialize(u) },
+        { user: serialize(publicAccount(u)) },
         { headers: { "Cache-Control": "private, no-store" } },
       );
+    if (path[0] === "profile") {
+      if (
+        path.length === 1 &&
+        (req.method === "GET" || req.method === "PATCH")
+      ) {
+        const profile =
+          req.method === "PATCH"
+            ? await updateOwnProfile(u, await req.json())
+            : await ownProfile(u);
+        return NextResponse.json(serialize(profile), {
+          headers: { "Cache-Control": "private, no-store" },
+        });
+      }
+      if (
+        path.length === 2 &&
+        path[1] === "password" &&
+        req.method === "POST"
+      ) {
+        await changeOwnPassword(u, await req.json());
+        (await cookies()).delete("organic_session");
+        return NextResponse.json(
+          { ok: true },
+          { headers: { "Cache-Control": "private, no-store" } },
+        );
+      }
+      return NextResponse.json({ error: "Không tìm thấy" }, { status: 404 });
+    }
+    if (path[0] === "attachment-config" && req.method === "GET") {
+      await cleanupUploads();
+      return NextResponse.json(attachmentLimits());
+    }
+    if (path[0] === "uploads") {
+      if (req.method === "DELETE" && path[1]) {
+        await discardFile(u, path[1]);
+        return NextResponse.json({ ok: true });
+      }
+      if (req.method === "POST" && path.length === 1) {
+        const length = Number(req.headers.get("content-length"));
+        if (!length || length > attachmentLimits().maxBytes + 1024 * 1024)
+          return NextResponse.json(
+            { error: "Request tải tệp vượt giới hạn hoặc thiếu dung lượng" },
+            { status: 413 },
+          );
+        const form = await req.formData(),
+          file = form.get("file");
+        if (!(file instanceof File)) throw new FileInputError("Chưa chọn tệp");
+        const saved = await stageFile(
+          u,
+          file,
+          String(form.get("uploadKey") || ""),
+        );
+        return NextResponse.json({
+          _id: String(saved._id),
+          name: saved.name,
+          size: saved.size,
+          type: saved.type,
+        });
+      }
+    }
+    if (path[0] === "files" && path[1] && req.method === "GET") {
+      const result = await readFile(u, path[1]);
+      if (!result)
+        return NextResponse.json(
+          { error: "Không có quyền truy cập tệp" },
+          { status: 403 },
+        );
+      const inline =
+        req.nextUrl.searchParams.get("preview") === "1" &&
+        /^(image\/|application\/pdf$)/.test(result.file.type);
+      return new Response(result.stream, {
+        headers: {
+          "Content-Type": result.file.type,
+          "Content-Length": String(result.file.size),
+          "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(result.file.name).replace(/['()*]/g, (v) => "%" + v.charCodeAt(0).toString(16))}`,
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+          "Content-Security-Policy": "sandbox; default-src 'none'",
+        },
+      });
+    }
+    if (path[0] === "notifications") {
+      if (req.method === "PATCH")
+        await markNotifications(
+          u,
+          path[1] && path[1] !== "all" ? id(path[1]) : undefined,
+        );
+      if (req.method === "GET" || req.method === "PATCH")
+        return NextResponse.json(serialize(await notificationsFor(u)), {
+          headers: { "Cache-Control": "private, no-store" },
+        });
+    }
     if (path[0] === "logout" && req.method === "POST") {
       const c = await cookies();
       const token = c.get("organic_session")?.value;
@@ -96,8 +208,16 @@ async function handle(
         .find()
         .project(
           u.role === "admin"
-            ? { passwordHash: 0 }
-            : { _id: 1, name: 1, departmentId: 1, active: 1 },
+            ? {
+                _id: 1,
+                name: 1,
+                email: 1,
+                role: 1,
+                departmentId: 1,
+                active: 1,
+                createdAt: 1,
+              }
+            : { _id: 1, name: 1, role: 1, departmentId: 1, active: 1 },
         )
         .toArray();
       const tasks = await d
@@ -106,7 +226,15 @@ async function handle(
         .sort({ dueDate: 1 })
         .toArray();
       return NextResponse.json(
-        serialize({ user: u, departments, users, tasks }),
+        serialize({
+          user: publicAccount(u),
+          departments,
+          users,
+          tasks: tasks.map((task) => ({
+            ...task,
+            participantIds: task.participantIds || [],
+          })),
+        }),
       );
     }
     if (path[0] === "tasks") {
@@ -115,7 +243,30 @@ async function handle(
           serialize(await createTask(u, await req.json())),
         );
       if (path[1]) {
-        if (req.method === "PATCH") {
+        if (
+          path.length === 3 &&
+          path[2] === "children" &&
+          req.method === "GET"
+        ) {
+          const parent = await d
+            .collection("tasks")
+            .findOne({ _id: id(path[1]) });
+          if (!parent || !canView(u, parent))
+            return NextResponse.json(
+              { error: "Không có quyền truy cập công việc" },
+              { status: 403 },
+            );
+          return NextResponse.json(
+            serialize(
+              await childrenPage(
+                u,
+                parent,
+                req.nextUrl.searchParams.get("after"),
+              ),
+            ),
+          );
+        }
+        if (path.length === 2 && req.method === "PATCH") {
           await changeTask(u, path[1], await req.json());
           return NextResponse.json({ ok: true });
         }
@@ -123,7 +274,7 @@ async function handle(
           await comment(u, path[1], (await req.json()).body);
           return NextResponse.json({ ok: true });
         }
-        if (req.method === "GET") {
+        if (path.length === 2 && req.method === "GET") {
           const t = await d.collection("tasks").findOne({ _id: id(path[1]) });
           if (!t || !canView(u, t))
             return NextResponse.json(
@@ -132,7 +283,21 @@ async function handle(
             );
           return NextResponse.json(
             serialize({
-              task: t,
+              task: { ...t, participantIds: t.participantIds || [] },
+              ...(await hierarchyDetails(u, t)),
+              attachments: await d
+                .collection("attachments")
+                .find({ taskId: t._id, state: "linked" })
+                .project({
+                  name: 1,
+                  type: 1,
+                  size: 1,
+                  purpose: 1,
+                  uploadedById: 1,
+                  createdAt: 1,
+                })
+                .sort({ createdAt: 1 })
+                .toArray(),
               comments: await d
                 .collection("task_comments")
                 .find({ taskId: t._id })
@@ -160,7 +325,15 @@ async function handle(
             users: await d
               .collection("users")
               .find()
-              .project({ passwordHash: 0 })
+              .project({
+                _id: 1,
+                name: 1,
+                email: 1,
+                role: 1,
+                departmentId: 1,
+                active: 1,
+                createdAt: 1,
+              })
               .sort({ name: 1 })
               .toArray(),
             departments: await d
@@ -177,6 +350,13 @@ async function handle(
     }
     return NextResponse.json({ error: "Không tìm thấy" }, { status: 404 });
   } catch (e: any) {
+    if (e instanceof ProfileInputError)
+      return NextResponse.json(
+        { error: e.message, fields: e.fields },
+        { status: e.status },
+      );
+    if (e instanceof FileInputError)
+      return NextResponse.json({ error: e.message }, { status: e.status });
     if (e instanceof AdminInputError)
       return NextResponse.json(
         { error: e.message, fields: e.fields },
@@ -191,7 +371,7 @@ async function handle(
             {
               email: "Email không hợp lệ",
               name: "Vui lòng nhập tên hợp lệ (tối đa 250 ký tự)",
-              password: "Mật khẩu phải có từ 10 đến 200 ký tự",
+              password: `Mật khẩu phải có từ ${PASSWORD_MIN_LENGTH} đến ${PASSWORD_MAX_LENGTH} ký tự`,
               code: "Mã phòng gồm 2–40 chữ, số, dấu gạch ngang hoặc gạch dưới",
               departmentId: "Vui lòng chọn phòng ban",
               role: "Vai trò không hợp lệ",

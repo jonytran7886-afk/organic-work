@@ -7,6 +7,13 @@ export const WorkspaceContext = createContext<{
   refresh: () => Promise<void>;
   cache: Map<string, CacheEntry>;
   expire: () => void;
+  updateOwnName: (name: string) => void;
+  createChild: (task: Row) => void;
+  reassign: (task: Row) => void;
+  change: (task: Row, values: Row) => Promise<boolean>;
+  busy: boolean;
+  expandedParents: ReadonlySet<string>;
+  toggleParent: (id: string) => void;
 } | null>(null);
 export function useWorkspace() {
   const context = useContext(WorkspaceContext);

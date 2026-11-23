@@ -1,0 +1,245 @@
+.subtasks-section {
+  border-top: 1px solid var(--border);
+  margin-top: 24px;
+  padding-top: 20px;
+}
+.subtasks-section > button {
+  margin: 10px 8px 12px 0;
+}
+.subtasks-section > label {
+  display: block;
+  margin: 14px 0;
+}
+.review-ready {
+  color: var(--green);
+  background: #f1f8ed;
+  padding: 12px;
+  border-radius: 8px;
+}
+.subtask-list {
+  padding: 0;
+  margin: 14px 0;
+  list-style: none;
+}
+.subtask-list li {
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding: 14px 0;
+}
+.subtask-list li > div {
+  min-width: 0;
+}
+.subtask-list a {
+  font-weight: 600;
+  color: var(--green);
+  overflow-wrap: anywhere;
+}
+.subtask-list small {
+  display: block;
+  margin: 6px 0;
+  color: var(--muted);
+}
+.archived-subtask {
+  opacity: 0.7;
+}
+.subtask-actions {
+  position: relative;
+  flex-shrink: 0;
+}
+.subtask-actions summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  list-style: none;
+  white-space: nowrap;
+  min-width: 36px;
+  text-align: center;
+}
+.subtask-actions summary::-webkit-details-marker {
+  display: none;
+}
+.subtask-actions > div {
+  position: absolute;
+  right: 0;
+  min-width: 140px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  z-index: 5;
+  padding: 6px;
+}
+.subtask-actions button {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  text-align: left;
+}
+.parent-task-links {
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.parent-task-links a {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.parent-task-links span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.parent-task-links summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--green);
+}
+.parent-task-backlink {
+  display: block;
+  margin: 12px 0;
+  color: var(--green);
+  font-weight: 600;
+}
+.parent-task-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.parent-task-row > a {
+  flex: 1;
+  min-width: 0;
+}
+.parent-task-row > a strong {
+  overflow-wrap: anywhere;
+}
+.subtasks-section .section-title {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.task-table-wrap {
+  overflow: visible;
+}
+.task-row-menu > div {
+  min-width: 220px;
+}
+.task-row-menu > div a {
+  display: block;
+  padding: 8px;
+  border: 0;
+  font-size: 14px;
+  color: var(--ink);
+}
+.work-task-actions .task-row-menu > div,
+.task-card .task-row-menu > div {
+  left: 0;
+  right: auto;
+}
+.task-relation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 5px 0;
+  font-size: 12px;
+}
+.task-relation a {
+  color: var(--green);
+  overflow-wrap: anywhere;
+}
+.subtask-badge {
+  display: inline-block;
+  background: #f1f8ed;
+  color: var(--green);
+  border-radius: 5px;
+  padding: 2px 6px;
+}
+.child-progress {
+  font-size: 12px;
+  color: var(--green);
+  display: inline-block;
+  margin: 4px 0;
+}
+.participant-picker {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 16px 0;
+  min-width: 0;
+}
+.participant-picker legend {
+  font-weight: 600;
+  padding: 0 5px;
+}
+.participant-options {
+  max-height: 160px;
+  overflow-y: auto;
+}
+.participant-options label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 0;
+  white-space: normal;
+}
+.participant-options input {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.participant-picker:disabled {
+  opacity: 0.65;
+}
+.participant-actions,
+.assignee-heading {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.assignee-heading {
+  justify-content: space-between;
+  margin: 12px 0;
+}
+.assignee-heading button {
+  padding: 6px 10px;
+}
+.task-participants {
+  border-top: 1px solid var(--border);
+  margin-top: 20px;
+  padding-top: 16px;
+}
+.task-participants p {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  margin: 10px 0;
+}
+.involvement-tabs {
+  margin-bottom: 14px;
+}
+@media (max-width: 680px) {
+  .task-table-wrap td:last-child:before {
+    content: none;
+  }
+  .task-table-wrap td:last-child {
+    grid-column: 2;
+    grid-row: 3;
+    justify-content: flex-end;
+  }
+  .task-table-wrap td:nth-child(4) {
+    grid-column: 1;
+    grid-row: 3;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .task-table-wrap td:nth-child(4):before {
+    content: "Hạn:";
+    color: var(--muted);
+  }
+}
